@@ -40,17 +40,15 @@ jobs:
           find pc -maxdepth 1 -type f ! -name ChangeLog -exec cp {} . \;
           cp pc/config.h .
           
-          # 2. 【核心修正】將 support/ 目錄下的所有 .h 標頭檔（包括 dfa.h、regex.h、getopt.h 等）
-          # 一次性完全投射到根目錄，徹底解決新版 gawk 結構更動導致的 Makefile 斷代相依性 Bug！
+          # 2. 將 support/ 目錄下的所有 .h 標頭檔投射到根目錄
           cp support/*.h .
           
-          # 3. 建立最小的 langinfo 兼容標頭檔
-          mkdir -p shim
-          echo '#define CODESET 0' > shim/langinfo.h
-          echo 'char *nl_langinfo(int item) { return "UTF-8"; }' >> shim/langinfo.h
-          cp shim/langinfo.h .
+          # 3. 【核心除錯】修正新版 GCC 對舊式微軟運行庫變數的相容性錯誤
+          # 將過時的 __mb_cur_max 全面自動替換為現代標準的 MB_CUR_MAX
+          sed -i 's/__mb_cur_max/MB_CUR_MAX/g' pc/nl_langinfo.c
           
           # 4. 依照 Windows-MSYS2 環境執行完全靜態連結原生編譯
+          # 這裡移除了先前導致衝突的手工 shim 目錄，100% 走官方自帶的 Windows 移植通道
           make all \
             CC=gcc O=.o \
             CF="-O2 -gdwarf-2 -g3 -Wno-implicit-function-declaration -Wno-int-conversion -Wno-incompatible-pointer-types -Wno-return-mismatch" \
@@ -90,5 +88,5 @@ jobs:
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
             --title "gawk 5.4.1 for Windows" \
-            --notes "GNU awk 5.4.1 native static windows binary." \
+            --notes "GNU awk 5.4.1 native static windows binary built with modern MinGW-w64." \
             dist/gawk.exe dist/pgawk.exe dist/COPYING dist/sha256sums.txt || true
