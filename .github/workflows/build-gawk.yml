@@ -25,7 +25,7 @@ jobs:
     # 3. 下載並解壓 gawk 5.4.1 官方原始碼
     - name: Download gawk 5.4.1 Source
       run: |
-        wget https://gnu.org
+        wget https://ftp.gnu.org/gnu/gawk/
         tar -xf gawk-5.4.1.tar.xz
 
     # 4. 配置與靜態編譯
