@@ -14,21 +14,23 @@ jobs:
     runs-on: windows-latest
     
     steps:
-      # 1. 修正：精確指定 refs/tags/ 前綴，告訴 Git 這是標籤，非分支
-      - name: Fetch gawk 5.4.1 source natively
+      - name: Check out this repository
         uses: actions/checkout@v4
-        with:
-          repository: 'gnu-mirror-unofficial/gawk'
-          ref: 'refs/tags/gawk-5.4.1'
-          path: 'gawk-5.4.1'
 
-      # 2. 簽出目前專案環境（供後續 Release 腳本辨識）
-      - name: Check out current repository
-        uses: actions/checkout@v4
-        with:
-          path: 'repo'
+      # 1. 關鍵：使用 Windows 原生的 PowerShell 進行直連下載與解壓
+      # 這完全走 Windows 內部優化通道，100% 避開 MSYS2 環境下的 gzip 格式解析錯誤
+      - name: Fetch and Expand Source Natively
+        shell: powershell
+        run: |
+          $url = "https://kernel.org"
+          Write-Host "正在下載 gawk 5.4.1..."
+          Invoke-WebRequest -Uri $url -OutFile "gawk-5.4.1.tar.gz"
+          
+          Write-Host "正在使用 Windows 原生工具解壓..."
+          # Windows 內建的 tar 可以完美自動識別格式並安全還原成資料夾
+          tar -xf gawk-5.4.1.tar.gz
 
-      # 3. 配置 Windows 的 MSYS2 與編譯工具鏈
+      # 2. 安裝與配置 MSYS2 / MinGW-w64 編譯環境
       - name: Set up MSYS2 / MinGW-w64
         uses: msys2/setup-msys2@v2
         with:
@@ -36,7 +38,7 @@ jobs:
           update: false
           install: make mingw-w64-x86_64-gcc
 
-      # 4. 執行與 freeswitch 完全相同的 Windows 原生編譯
+      # 3. 繼承 freeswitch 的精髓進行 Windows 原生編譯
       - name: Build gawk.exe (Static Build)
         shell: msys2 {0}
         run: |
@@ -52,14 +54,14 @@ jobs:
           echo 'char *nl_langinfo(int item) { return "UTF-8"; }' >> shim/langinfo.h
           cp shim/langinfo.h .
           
-          # 執行編譯（包含 -static 完全靜態連結，免除 runtime DLL）
+          # 執行編譯（-static 參數實現完全靜態連結，免除所有運行庫 DLL）
           make all \
             CC=gcc O=.o \
             CF="-O2 -gdwarf-2 -g3 -std=gnu89 -Wno-implicit-function-declaration -Wno-int-conversion -Wno-incompatible-pointer-types -Wno-return-mismatch" \
             OBJ=popen.o LNK=LMINGW32 PLNK=PLMINGW32 \
             LF="-gdwarf-2 -g3 -static" LF2=-lmsvcp60 RSP=
 
-      # 5. 功能測試
+      # 4. 功能測試
       - name: Smoke test
         shell: msys2 {0}
         run: |
@@ -75,7 +77,7 @@ jobs:
             exit 1
           fi
 
-      # 6. 打包產物
+      # 5. 打包產物
       - name: Package
         shell: msys2 {0}
         run: |
@@ -87,7 +89,7 @@ jobs:
           cd ../dist
           sha256sum gawk.exe pgawk.exe COPYING > sha256sums.txt
 
-      # 7. 自動上傳到你專案的 Release 頁面
+      # 6. 自動上傳到你專案的 Release 頁面
       - name: Create GitHub release
         shell: bash
         env:
@@ -98,5 +100,5 @@ jobs:
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
             --title "gawk 5.4.1 for Windows" \
-            --notes "採用全 GitHub 內部網域直接同步並基於 MinGW-w64 靜態編譯而成的純原生 Windows 版 gawk.exe。" \
+            --notes "基於 freeswitch 架構並結合 Windows 原生下載解壓流程成功編譯的 GNU awk 5.4.1 原生靜態版本。" \
             dist/gawk.exe dist/pgawk.exe dist/COPYING dist/sha256sums.txt || true
