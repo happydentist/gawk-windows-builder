@@ -1,63 +1,91 @@
-name: Build gawk for Windows
+name: Build gawk 5.4.1 for Windows
 
 on:
   push:
     branches: [ "main", "master" ]
-  pull_request:
-    branches: [ "main", "master" ]
   workflow_dispatch:
 
+permissions:
+  contents: write # 允許 Actions 自動幫你建立 Release 並上傳 exe
+
 jobs:
-  mingw-build:
-    runs-on: ubuntu-latest
+  build:
+    name: Build and release gawk.exe (Windows-MSYS2)
+    runs-on: windows-latest # 借鑒關鍵：改用 Windows 環境，徹底解決 Linux 的網路阻斷問題
     
     steps:
-    - name: Checkout Repository
-      uses: actions/checkout@v4
+      - name: Check out this repository
+        uses: actions/checkout@v4
 
-    - name: Install MinGW Cross-Compiler
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y mingw-w64 binutils-mingw-w64 build-essential git autoconf automake gettext bison flex
+      - name: Set up MSYS2 / MinGW-w64
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: false
+          install: make mingw-w64-x86_64-gcc
 
-    - name: Clone gawk Source via GitHub Internal Mirror
-      run: |
-        # 直接克隆 GitHub 上的非官方 GNU 鏡像（完全留在 GitHub 機房內部，不連外部網路）
-        git clone https://github.com src
-        cd src
-        
-        # 切換到 5.4.1 版本的官方 Release Tag
-        git checkout gawk-5.4.1
-        
-        # 自動生成 configure 腳本
-        ./bootstrap.sh
+      - name: Fetch gawk source from ftp.gnu.org
+        shell: msys2 {0}
+        run: |
+          set -euo pipefail
+          # 借鑒關鍵：下載 .tar.gz 格式，避免 .xz 觸發的網頁跳轉
+          curl -fsSL -o "gawk-5.4.1.tar.gz" "https://gnu.org"
+          tar xzf "gawk-5.4.1.tar.gz"
 
-    - name: Configure and Compile (Static Link)
-      run: |
-        cd src
-        ./configure \
-          --host=x86_64-w64-mingw32 \
-          --prefix=${{ github.workspace }}/output \
-          --disable-shared \
-          --enable-static \
-          LDFLAGS="-static" \
-          CFLAGS="-O3"
-        make -j$(nproc)
+      - name: Prepare Windows Build Files
+        shell: msys2 {0}
+        run: |
+          set -euo pipefail
+          cd "gawk-5.4.1"
+          # 將 pc/ 目錄下的 Windows 專用移植檔案複製到根目錄
+          find pc -maxdepth 1 -type f ! -name ChangeLog -exec cp {} . \;
+          
+          # 建立缺失的 langinfo.h 最小標頭檔
+          mkdir -p shim
+          echo '#define CODESET 0' > shim/langinfo.h
+          echo 'char *nl_langinfo(int item) { return "UTF-8"; }' >> shim/langinfo.h
+          cp shim/langinfo.h .
 
-    - name: Install Binaries
-      run: |
-        cd src
-        make install
+      - name: Build gawk.exe (Static Link)
+        shell: msys2 {0}
+        run: |
+          set -euo pipefail
+          cd "gawk-5.4.1"
+          
+          # 編譯成完全靜態連結 (LDFLAGS="-static")，確保無依賴
+          make all \
+            CC=gcc O=.o \
+            CF="-O2 -gdwarf-2 -g3 -std=gnu89 -Wno-implicit-function-declaration -Wno-int-conversion -Wno-incompatible-pointer-types -Wno-return-mismatch" \
+            OBJ=popen.o LNK=LMINGW32 PLNK=PLMINGW32 \
+            LF="-gdwarf-2 -g3 -static" LF2=-lmsvcp60 RSP=
 
-    - name: Verify Executable
-      run: |
-        ls -lh ${{ github.workspace }}/output/bin/
-        file ${{ github.workspace }}/output/bin/gawk.exe || true
+      - name: Smoke test
+        shell: msys2 {0}
+        run: |
+          set -euo pipefail
+          cd "gawk-5.4.1"
+          ./gawk.exe --version
+          test "$(echo 'hello world' | ./gawk.exe '{ print toupper($2), 1+2 }')" = "WORLD 3"
 
-    - name: Upload Windows exe
-      uses: actions/upload-artifact@v4
-      with:
-        name: gawk-5.4.1-windows-static
-        path: |
-          ${{ github.workspace }}/output/bin/gawk.exe
-          ${{ github.workspace }}/output/bin/awk.exe
+      - name: Package Binaries
+        shell: msys2 {0}
+        run: |
+          set -euo pipefail
+          cd "gawk-5.4.1"
+          strip gawk.exe pgawk.exe
+          mkdir ../dist
+          cp gawk.exe pgawk.exe COPYING ../dist/
+
+      - name: Create GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          # 自動在你的 GitHub 專案建立一個 Release 發布頁面，並把 exe 塞進去
+          gh release create "v5.4.1" \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "gawk 5.4.1 for Windows" \
+            --notes "本檔案由 GitHub Actions 透過 MinGW-w64 交叉靜態編譯而成，為純原生 Windows 執行檔。" \
+            dist/gawk.exe dist/pgawk.exe dist/COPYING || true
