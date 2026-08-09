@@ -36,11 +36,10 @@ jobs:
           set -euo pipefail
           cd "gawk-5.4.1"
           
-          # 1. 關鍵修正：將 Windows 移植專用的 pc 檔案複製到根目錄
+          # 1. 複製官方 pc/ 目錄下的 Windows 專用移植檔到根目錄
           find pc -maxdepth 1 -type f ! -name ChangeLog -exec cp {} . \;
           
-          # 2. 核心修正：新版 gawk 必須將 posix/ 目錄下的 regex.h 等檔案複製出來，否則編譯會報錯缺失
-          cp posix/regex.h .
+          # 2. 複製必要的 config.h 到根目錄
           cp pc/config.h .
           
           # 3. 建立最小的 langinfo 兼容標頭檔
@@ -49,10 +48,11 @@ jobs:
           echo 'char *nl_langinfo(int item) { return "UTF-8"; }' >> shim/langinfo.h
           cp shim/langinfo.h .
           
-          # 執行編譯（-static 參數實現完全靜態連結，免除所有運行庫 DLL）
+          # 4. 依照 gawk 5.4.1 官方 pc/Makefile 規範執行原生 Windows 靜態連結編譯
+          # 移除會干擾新版編譯器的 -std=gnu89 參數，保持乾淨的標準 O2 優化與完全靜態連結 (-static)
           make all \
             CC=gcc O=.o \
-            CF="-O2 -gdwarf-2 -g3 -std=gnu89 -Wno-implicit-function-declaration -Wno-int-conversion -Wno-incompatible-pointer-types -Wno-return-mismatch" \
+            CF="-O2 -gdwarf-2 -g3 -Wno-implicit-function-declaration -Wno-int-conversion -Wno-incompatible-pointer-types -Wno-return-mismatch" \
             OBJ=popen.o LNK=LMINGW32 PLNK=PLMINGW32 \
             LF="-gdwarf-2 -g3 -static" LF2=-lmsvcp60 RSP=
 
