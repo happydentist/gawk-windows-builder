@@ -59,12 +59,14 @@ jobs:
           sed -i 's/#define HAVE_STRCOLL 0/#define HAVE_STRCOLL 1/g' config.h
           echo "" > missing_d/strcoll.c
           
-          # 7. 【核心除錯：消除執行卡死無窮迴圈】
-          # 強制宣告支援 Windows 的 c32/wctype 核心函數，封印 custom.h 的危險巨集重新定義
+          # 7. 【終極除錯：解決啟動死結】
+          # 強制註解掉會導致靜態執行檔啟動卡死的動態載入庫定義，並啟用原生 C32/Wctype 支援
+          sed -i 's/#define HAVE_DLFCN_H 1/\/* #define HAVE_DLFCN_H 1 *\//g' config.h
           echo "#define HAVE_MBLEN 1" >> config.h
           echo "#define HAVE_MBRLEN 1" >> config.h
           echo "#define HAVE_ISWBLANK 1" >> config.h
           echo "#define HAVE_ISWCTYPE 1" >> config.h
+          echo "#define INT_PROG_ANALYSIS 1" >> config.h
           
           # 8. 手動編譯 pc/Makefile 遺漏定義的 dynarray 物件檔案
           gcc -c -O2 -I. -I./support -DHAVE_CONFIG_H malloc/dynarray_resize.c
@@ -73,7 +75,7 @@ jobs:
           gcc -c -O2 -I. -I./support -DHAVE_CONFIG_H malloc/dynarray_at_failure.c
           gcc -c -O2 -I. -I./support -DHAVE_CONFIG_H malloc/dynarray_resize_clear.c
           
-          # 9. 執行完全靜態連結原生編譯 (徹底移除了 -lmsvcp60，加入完全靜態連結)
+          # 9. 執行完全靜態連結原生編譯（徹底移除 -lmsvcp60，加入完全靜態連結參數）
           make all \
             CC=gcc O=.o \
             CF="-O2 -Wno-implicit-function-declaration -Wno-int-conversion -Wno-incompatible-pointer-types -Wno-return-mismatch" \
@@ -85,9 +87,15 @@ jobs:
         run: |
           set -euo pipefail
           cd "gawk-5.4.1"
-          # 這裡會直接測試執行，如果依然卡死，GitHub Actions 就會在這裡逾時報錯，確保下載下來的絕對可用！
+          
+          # 核心防禦：如果編譯出來的 exe 在啟動時會卡死，Actions 執行到這一步會直接卡住並超時報錯！
+          echo "正在驗證 gawk.exe 啟動回應狀態..."
           ./gawk.exe --version
+          
+          echo "正在驗證 gawk 功能管道測試..."
           test "$(echo 'hello world' | ./gawk.exe '{ print toupper($2), 1+2 }')" = "WORLD 3"
+          
+          # 驗證是否為純原生執行檔
           objdump -p gawk.exe | grep 'DLL Name'
           if objdump -p gawk.exe | grep -Ei 'cygwin|msys' ; then
             exit 1
