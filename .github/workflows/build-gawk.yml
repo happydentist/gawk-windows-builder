@@ -20,16 +20,16 @@ jobs:
         sudo apt-get update
         sudo apt-get install -y mingw-w64 binutils-mingw-w64 build-essential git autoconf automake gettext bison flex
 
-    - name: Clone gawk Source via Git
+    - name: Clone gawk Source via GitHub Internal Mirror
       run: |
-        # 1. 直接從 GNU 官方的 Git 儲存庫克隆 gawk 原始碼（絕對不會有跳轉或防爬蟲問題）
-        git clone https://gnu.org src
+        # 直接克隆 GitHub 上的非官方 GNU 鏡像（完全留在 GitHub 機房內部，不連外部網路）
+        git clone https://github.com src
         cd src
         
-        # 2. 直接切換到 5.4.1 版本的官方 Release Tag
+        # 切換到 5.4.1 版本的官方 Release Tag
         git checkout gawk-5.4.1
         
-        # 3. 由於是從 Git 抓取，需要自動生成 configure 腳本
+        # 自動生成 configure 腳本
         ./bootstrap.sh
 
     - name: Configure and Compile (Static Link)
