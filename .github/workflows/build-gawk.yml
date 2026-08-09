@@ -22,14 +22,14 @@ jobs:
 
     - name: Download gawk 5.4.1 Source
       run: |
-        # 直接使用 curl 下載直連檔案，避免 env 解析與任何跳轉問題
-        curl -L -o gawk-5.4.1.tar.xz https://ntua.edu.tw
+        # 改用國際頂級 Yandex CDN 鏡像站，確保 GitHub 歐美虛擬機 100% 可解析 DNS
+        curl -L -o gawk-5.4.1.tar.xz https://yandex.ru
         
-        # 檢查下載檔案大小是否正常（真的原始碼壓縮檔應該大於 3MB，如果是網頁 HTML 只有幾 KB）
+        # 檢查下載檔案體積（正式包約為 3.7MB，至少需大於 1MB）
         FILE_SIZE=$(wc -c < gawk-5.4.1.tar.xz)
         if [ "$FILE_SIZE" -lt 1000000 ]; then
-          echo "錯誤：下載的檔案太小 ($FILE_SIZE 位元組)，可能又抓到網頁了！"
-          head -n 10 gawk-5.4.1.tar.xz
+          echo "錯誤：下載的檔案太小 ($FILE_SIZE 流量)，可能抓錯了！"
+          head -n 5 gawk-5.4.1.tar.xz
           exit 1
         fi
         
