@@ -38,9 +38,12 @@ jobs:
           
           # 1. 複製官方 pc/ 目錄下的 Windows 專用移植檔到根目錄
           find pc -maxdepth 1 -type f ! -name ChangeLog -exec cp {} . \;
-          
-          # 2. 複製必要的 config.h 到根目錄
           cp pc/config.h .
+          
+          # 2. 【核心修正】將新版 gawk 藏在 support/ 目錄下的正規表示式標頭檔提取到根目錄
+          # 這能完美解決 "No rule to make target 'regex.h'" 的 Makefile 斷代相依性 Bug！
+          cp support/regex.h .
+          cp support/regex_internal.h .
           
           # 3. 建立最小的 langinfo 兼容標頭檔
           mkdir -p shim
@@ -48,8 +51,7 @@ jobs:
           echo 'char *nl_langinfo(int item) { return "UTF-8"; }' >> shim/langinfo.h
           cp shim/langinfo.h .
           
-          # 4. 依照 gawk 5.4.1 官方 pc/Makefile 規範執行原生 Windows 靜態連結編譯
-          # 移除會干擾新版編譯器的 -std=gnu89 參數，保持乾淨的標準 O2 優化與完全靜態連結 (-static)
+          # 4. 依照 Windows-MSYS2 環境執行完全靜態連結原生編譯
           make all \
             CC=gcc O=.o \
             CF="-O2 -gdwarf-2 -g3 -Wno-implicit-function-declaration -Wno-int-conversion -Wno-incompatible-pointer-types -Wno-return-mismatch" \
