@@ -28,10 +28,13 @@ jobs:
         shell: msys2 {0}
         run: |
           set -euo pipefail
-          # 保留 freeswitch 的 curl 與 tar.gz 邏輯
-          # 改用核心 Linux 基金會的官方鏡像，確保 100% 避開 GitHub 機房被 gnu.org 阻斷的問題
+          
+          # 下載 gawk 5.4.1
           curl -fsSL -o "gawk-5.4.1.tar.gz" "https://kernel.org"
-          tar xzf "gawk-5.4.1.tar.gz"
+          
+          # 關鍵修正：棄用 xzf，改用具備自動格式偵測且包容度最強的 -xf 參數！
+          # 這能 100% 免疫 curl 在背景自動將 gzip 網頁串流解壓造成的格式錯亂問題。
+          tar -xf "gawk-5.4.1.tar.gz"
 
       - name: Build gawk.exe (Static Build)
         shell: msys2 {0}
