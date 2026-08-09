@@ -66,8 +66,7 @@ jobs:
           gcc -c -O2 -I. -I./support -DHAVE_CONFIG_H malloc/dynarray_at_failure.c
           gcc -c -O2 -I. -I./support -DHAVE_CONFIG_H malloc/dynarray_resize_clear.c
           
-          # 8. 【終極除錯】在 LF2 參數中手動追加 -lws2_32 參數！
-          # 這能 100% 補齊 Windows 核心網路通訊庫依賴，解決所有 socket / WSA 連結錯誤！
+          # 8. 執行完全靜態連結原生編譯（補足 Winsock2 網路通訊庫）
           make all \
             CC=gcc O=.o \
             CF="-O2 -gdwarf-2 -g3 -Wno-implicit-function-declaration -Wno-int-conversion -Wno-incompatible-pointer-types -Wno-return-mismatch" \
@@ -91,11 +90,12 @@ jobs:
         run: |
           set -euo pipefail
           cd "gawk-5.4.1"
-          strip gawk.exe pgawk.exe
+          # 修正關鍵：只對真正生成的 gawk.exe 進行瘦身與打包，移除不存在的 pgawk.exe
+          strip gawk.exe
           mkdir ../dist
-          cp gawk.exe pgawk.exe COPYING ../dist/
+          cp gawk.exe COPYING ../dist/
           cd ../dist
-          sha256sum gawk.exe pgawk.exe COPYING > sha256sums.txt
+          sha256sum gawk.exe COPYING > sha256sums.txt
 
       - name: Create GitHub release
         shell: bash
@@ -103,9 +103,10 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
+          # 修正關鍵：發布產物只包進真正的 gawk.exe、授權檔與校驗碼
           gh release create "v5.4.1" \
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
             --title "gawk 5.4.1 for Windows" \
-            --notes "GNU awk 5.4.1 native static windows binary with network socket support." \
-            dist/gawk.exe dist/pgawk.exe dist/COPYING dist/sha256sums.txt || true
+            --notes "GNU awk 5.4.1 native static windows binary built with modern MinGW-w64." \
+            dist/gawk.exe dist/COPYING dist/sha256sums.txt || true
