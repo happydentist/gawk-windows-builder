@@ -30,7 +30,7 @@ jobs:
           update: false
           install: make mingw-w64-x86_64-gcc
 
-      - name: Build gawk.exe (Native Windows Optimization)
+      - name: Build gawk.exe (Strict Native Build)
         shell: msys2 {0}
         run: |
           set -euo pipefail
@@ -44,7 +44,7 @@ jobs:
           cp support/*.h .
           cp support/*.c .
           
-          # 3. 完整投射整個 support/malloc/ 目計下的所有檔案
+          # 3. 完整投射整個 support/malloc/ 目錄下的所有檔案
           mkdir -p malloc
           cp support/malloc/* malloc/
           
@@ -73,22 +73,28 @@ jobs:
           gcc -c -O2 -I. -I./support -DHAVE_CONFIG_H malloc/dynarray_at_failure.c
           gcc -c -O2 -I. -I./support -DHAVE_CONFIG_H malloc/dynarray_resize_clear.c
           
-          # 9. 【最核心修正：改變連結戰略】
-          # 將 LF 改為 "-static-libgcc"，不再使用全靜態 "-static"！
-          # 這能讓 gawk 完美動態連結 Windows 內建的 msvcrt.dll，徹底解放標準輸出流，解決本機啟動卡死！
+          # 9. 【核心戰略修正】同時啟用三個靜態參數，強制把 gcc、winpthread 核心通通拍扁打進 exe 內部
           make all \
             CC=gcc O=.o \
             CF="-O2 -Wno-implicit-function-declaration -Wno-int-conversion -Wno-incompatible-pointer-types -Wno-return-mismatch" \
             OBJ=popen.o LNK=LMINGW32 PLNK=PLMINGW32 \
-            LF="-static-libgcc" LF2="-lws2_32" RSP=
+            LF="-static -static-libgcc -static-libstdc++" LF2="-lws2_32" RSP=
 
-      - name: Native CMD Smoke Test
+      - name: Diagnostic Step (檢查這顆 EXE 到底偷黏了哪些 DLL)
+        shell: msys2 {0}
+        run: |
+          cd "gawk-5.4.1"
+          echo "==== [DLL 依賴檢查清單] ===="
+          objdump -p gawk.exe | grep -i 'DLL Name'
+          echo "============================"
+
+      - name: Native Windows CMD Verification
         shell: cmd
         run: |
           cd gawk-5.4.1
-          :: 關鍵防禦：直接強迫在微軟原生命令提示字元 (CMD) 下執行驗證！
-          :: 如果這裡成功吐出版本，就代表下載回你的實體電腦也絕對不會再卡死！
+          echo "==== [在 Windows 原生環境測試執行] ===="
           gawk.exe --version
+          echo "========================================"
 
       - name: Package
         shell: msys2 {0}
@@ -111,5 +117,5 @@ jobs:
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
             --title "gawk 5.4.1 for Windows" \
-            --notes "GNU awk 5.4.1 native 64-bit windows binary optimized for standard Windows Console (CMD/PowerShell)." \
+            --notes "GNU awk 5.4.1 static 64-bit windows binary." \
             dist/gawk.exe dist/COPYING dist/sha256sums.txt || true
