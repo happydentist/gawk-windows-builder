@@ -40,19 +40,20 @@ jobs:
           find pc -maxdepth 1 -type f ! -name ChangeLog -exec cp {} . \;
           cp pc/config.h .
           
-          # 2. 將 support/ 目錄下的所有 .h 標頭檔投射到根目錄
+          # 2. 【關鍵除錯：補齊核心正則引擎的實作檔】
+          # 除了投射 support/ 下的標頭檔外，把所有 .c 實作原始檔（如 regcomp.c 等）也一併複製到根目錄
+          # 這能 100% 根除 "No rule to make target 'regcomp.c'" 的 Makefile 相依性斷代死結！
           cp support/*.h .
+          cp support/*.c .
           
-          # 3. 【核心修正：解決 malloc/ 內部所有 .h 與 .c 相依檔缺失】
-          # 不只複製標頭檔，直接將整個 support/malloc/ 底下的檔案完整投射到根目錄的 malloc 資料夾
-          # 這能 100% 根除 "No rule to make target 'malloc/dynarray-skeleton.c'" 的編譯死結！
+          # 3. 完整投射整個 support/malloc/ 目錄下的所有檔案
           mkdir -p malloc
           cp support/malloc/* malloc/
           
-          # 4. 【核心除錯 1】修正新版 GCC 對舊式微軟運行庫變數的相容性錯誤
+          # 4. 修正新版 GCC 對舊式微軟運行庫變數的相容性錯誤
           sed -i 's/__mb_cur_max/MB_CUR_MAX/g' pc/nl_langinfo.c
           
-          # 5. 【核心除錯 2】全面封印過時的 rpl_strftime，強制採用 Windows 原生標準 time.h 函數
+          # 5. 全面封印過時的 rpl_strftime，強制採用 Windows 原生標準 time.h 函數
           sed -i 's/#define strftime rpl_strftime/\/* #define strftime rpl_strftime *\//g' config.h
           echo "#define HAVE_STRFTIME 1" >> config.h
           
