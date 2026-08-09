@@ -18,26 +18,23 @@ jobs:
     - name: Install MinGW Cross-Compiler
       run: |
         sudo apt-get update
-        sudo apt-get install -y mingw-w64 binutils-mingw-w64 build-essential curl xz-utils
+        sudo apt-get install -y mingw-w64 binutils-mingw-w64 build-essential git autoconf automake gettext bison flex
 
-    - name: Download gawk 5.4.1 Source
+    - name: Clone gawk Source via Git
       run: |
-        # 改用國際頂級 Yandex CDN 鏡像站，確保 GitHub 歐美虛擬機 100% 可解析 DNS
-        curl -L -o gawk-5.4.1.tar.xz https://yandex.ru
+        # 1. 直接從 GNU 官方的 Git 儲存庫克隆 gawk 原始碼（絕對不會有跳轉或防爬蟲問題）
+        git clone https://gnu.org src
+        cd src
         
-        # 檢查下載檔案體積（正式包約為 3.7MB，至少需大於 1MB）
-        FILE_SIZE=$(wc -c < gawk-5.4.1.tar.xz)
-        if [ "$FILE_SIZE" -lt 1000000 ]; then
-          echo "錯誤：下載的檔案太小 ($FILE_SIZE 流量)，可能抓錯了！"
-          head -n 5 gawk-5.4.1.tar.xz
-          exit 1
-        fi
+        # 2. 直接切換到 5.4.1 版本的官方 Release Tag
+        git checkout gawk-5.4.1
         
-        tar -xf gawk-5.4.1.tar.xz
+        # 3. 由於是從 Git 抓取，需要自動生成 configure 腳本
+        ./bootstrap.sh
 
     - name: Configure and Compile (Static Link)
       run: |
-        cd gawk-5.4.1
+        cd src
         ./configure \
           --host=x86_64-w64-mingw32 \
           --prefix=${{ github.workspace }}/output \
@@ -49,7 +46,7 @@ jobs:
 
     - name: Install Binaries
       run: |
-        cd gawk-5.4.1
+        cd src
         make install
 
     - name: Verify Executable
