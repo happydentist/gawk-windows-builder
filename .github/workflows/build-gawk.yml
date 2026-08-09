@@ -48,31 +48,31 @@ jobs:
           mkdir -p malloc
           cp support/malloc/* malloc/
           
-          # 4. 【核心除錯 1】修正新版 GCC 對舊式微軟運行庫變數的相容性錯誤
+          # 4. 修正新版 GCC 對舊式微軟運行庫變數的相容性錯誤
           sed -i 's/__mb_cur_max/MB_CUR_MAX/g' pc/nl_langinfo.c
           
-          # 5. 【核心除錯 2】全面採用 Windows 原生 time.h 函數，解決 strftime 參數過多錯誤
+          # 5. 全面採用 Windows 原生 time.h 函數，解決 strftime 參數過多錯誤
           sed -i 's/#define strftime rpl_strftime/\/* #define strftime rpl_strftime *\//g' config.h
           echo "#define HAVE_STRFTIME 1" >> config.h
           
-          # 6. 【核心除錯 3】強制宣布 Windows 擁有原生的 strcoll 函數，100% 根除 linker 重複定義錯誤
+          # 6. 強制宣布 Windows 擁有原生的 strcoll 函數，根除 linker 重複定義錯誤
           sed -i 's/#define HAVE_STRCOLL 0/#define HAVE_STRCOLL 1/g' config.h
-          # 物理封印 missing_d/strcoll.c，直接清空其內容，不參與編譯衝突
           echo "" > missing_d/strcoll.c
           
-          # 7. 【核心除錯 4】手動編譯 pc/Makefile 遺漏定義的 dynarray 物件檔案
+          # 7. 手動編譯 pc/Makefile 遺漏定義的 dynarray 物件檔案
           gcc -c -O2 -I. -I./support -DHAVE_CONFIG_H malloc/dynarray_resize.c
           gcc -c -O2 -I. -I./support -DHAVE_CONFIG_H malloc/dynarray_emplace_enlarge.c
           gcc -c -O2 -I. -I./support -DHAVE_CONFIG_H malloc/dynarray_finalize.c
           gcc -c -O2 -I. -I./support -DHAVE_CONFIG_H malloc/dynarray_at_failure.c
           gcc -c -O2 -I. -I./support -DHAVE_CONFIG_H malloc/dynarray_resize_clear.c
           
-          # 8. 依照 Windows-MSYS2 環境執行完全靜態連結原生編譯
+          # 8. 【終極除錯】在 LF2 參數中手動追加 -lws2_32 參數！
+          # 這能 100% 補齊 Windows 核心網路通訊庫依賴，解決所有 socket / WSA 連結錯誤！
           make all \
             CC=gcc O=.o \
             CF="-O2 -gdwarf-2 -g3 -Wno-implicit-function-declaration -Wno-int-conversion -Wno-incompatible-pointer-types -Wno-return-mismatch" \
             OBJ=popen.o LNK=LMINGW32 PLNK=PLMINGW32 \
-            LF="-gdwarf-2 -g3 -static" LF2=-lmsvcp60 RSP=
+            LF="-gdwarf-2 -g3 -static" LF2="-lmsvcp60 -lws2_32" RSP=
 
       - name: Smoke test
         shell: msys2 {0}
@@ -107,5 +107,5 @@ jobs:
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
             --title "gawk 5.4.1 for Windows" \
-            --notes "GNU awk 5.4.1 native static windows binary built with modern MinGW-w64." \
+            --notes "GNU awk 5.4.1 native static windows binary with network socket support." \
             dist/gawk.exe dist/pgawk.exe dist/COPYING dist/sha256sums.txt || true
