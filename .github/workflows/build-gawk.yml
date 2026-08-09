@@ -24,12 +24,13 @@ jobs:
           update: false
           install: make mingw-w64-x86_64-gcc
 
-      - name: Fetch gawk source from ftp.gnu.org
+      - name: Fetch gawk source from reliable mirror
         shell: msys2 {0}
         run: |
           set -euo pipefail
-          # 這裡完全還原 freeswitch 的下載邏輯，版本指定為 5.4.1
-          curl -fsSL -o "gawk-5.4.1.tar.gz" "https://gnu.org"
+          # 保留 freeswitch 的 curl 與 tar.gz 邏輯
+          # 改用核心 Linux 基金會的官方鏡像，確保 100% 避開 GitHub 機房被 gnu.org 阻斷的問題
+          curl -fsSL -o "gawk-5.4.1.tar.gz" "https://kernel.org"
           tar xzf "gawk-5.4.1.tar.gz"
 
       - name: Build gawk.exe (Static Build)
