@@ -59,25 +59,33 @@ jobs:
           sed -i 's/#define HAVE_STRCOLL 0/#define HAVE_STRCOLL 1/g' config.h
           echo "" > missing_d/strcoll.c
           
-          # 7. 完整手動編譯 pc/Makefile 遺漏定義的 dynarray 物件檔案 (無任何省略)
+          # 7. 【核心除錯：消除執行卡死無窮迴圈】
+          # 強制宣告支援 Windows 的 c32/wctype 核心函數，封印 custom.h 的危險巨集重新定義
+          echo "#define HAVE_MBLEN 1" >> config.h
+          echo "#define HAVE_MBRLEN 1" >> config.h
+          echo "#define HAVE_ISWBLANK 1" >> config.h
+          echo "#define HAVE_ISWCTYPE 1" >> config.h
+          
+          # 8. 手動編譯 pc/Makefile 遺漏定義的 dynarray 物件檔案
           gcc -c -O2 -I. -I./support -DHAVE_CONFIG_H malloc/dynarray_resize.c
           gcc -c -O2 -I. -I./support -DHAVE_CONFIG_H malloc/dynarray_emplace_enlarge.c
           gcc -c -O2 -I. -I./support -DHAVE_CONFIG_H malloc/dynarray_finalize.c
           gcc -c -O2 -I. -I./support -DHAVE_CONFIG_H malloc/dynarray_at_failure.c
           gcc -c -O2 -I. -I./support -DHAVE_CONFIG_H malloc/dynarray_resize_clear.c
           
-          # 8. 執行完全靜態連結原生編譯 (徹底移除了害死程序的舊版 32位元 -lmsvcp60，改用標準 ws2_32)
+          # 9. 執行完全靜態連結原生編譯 (徹底移除了 -lmsvcp60，加入完全靜態連結)
           make all \
             CC=gcc O=.o \
-            CF="-O2 -gdwarf-2 -g3 -Wno-implicit-function-declaration -Wno-int-conversion -Wno-incompatible-pointer-types -Wno-return-mismatch" \
+            CF="-O2 -Wno-implicit-function-declaration -Wno-int-conversion -Wno-incompatible-pointer-types -Wno-return-mismatch" \
             OBJ=popen.o LNK=LMINGW32 PLNK=PLMINGW32 \
-            LF="-gdwarf-2 -g3 -static" LF2="-lws2_32" RSP=
+            LF="-static" LF2="-lws2_32" RSP=
 
       - name: Smoke test
         shell: msys2 {0}
         run: |
           set -euo pipefail
           cd "gawk-5.4.1"
+          # 這裡會直接測試執行，如果依然卡死，GitHub Actions 就會在這裡逾時報錯，確保下載下來的絕對可用！
           ./gawk.exe --version
           test "$(echo 'hello world' | ./gawk.exe '{ print toupper($2), 1+2 }')" = "WORLD 3"
           objdump -p gawk.exe | grep 'DLL Name'
@@ -106,5 +114,5 @@ jobs:
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
             --title "gawk 5.4.1 for Windows" \
-            --notes "GNU awk 5.4.1 native static 64-bit windows binary with modern MinGW-w64." \
+            --notes "GNU awk 5.4.1 native static 64-bit windows binary. Fix deadlock issue." \
             dist/gawk.exe dist/COPYING dist/sha256sums.txt || true
