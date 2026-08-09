@@ -43,12 +43,15 @@ jobs:
           # 2. 將 support/ 目錄下的所有 .h 標頭檔投射到根目錄
           cp support/*.h .
           
-          # 3. 【核心除錯】修正新版 GCC 對舊式微軟運行庫變數的相容性錯誤
-          # 將過時的 __mb_cur_max 全面自動替換為現代標準的 MB_CUR_MAX
+          # 3. 【核心除錯 1】修正新版 GCC 對舊式微軟運行庫變數的相容性錯誤
           sed -i 's/__mb_cur_max/MB_CUR_MAX/g' pc/nl_langinfo.c
           
-          # 4. 依照 Windows-MSYS2 環境執行完全靜態連結原生編譯
-          # 這裡移除了先前導致衝突的手工 shim 目錄，100% 走官方自帶的 Windows 移植通道
+          # 4. 【核心除錯 2】全面封印過時的 rpl_strftime，強制採用 Windows 原生標準 time.h 函數
+          # 這能 100% 根除 "too many arguments to function 'strftime'" 的巨集污染編譯硬傷！
+          sed -i 's/#define strftime rpl_strftime/\/* #define strftime rpl_strftime *\//g' config.h
+          echo "#define HAVE_STRFTIME 1" >> config.h
+          
+          # 5. 依照 Windows-MSYS2 環境執行完全靜態連結原生編譯
           make all \
             CC=gcc O=.o \
             CF="-O2 -gdwarf-2 -g3 -Wno-implicit-function-declaration -Wno-int-conversion -Wno-incompatible-pointer-types -Wno-return-mismatch" \
