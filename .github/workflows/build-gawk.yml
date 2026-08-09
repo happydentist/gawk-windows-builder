@@ -43,10 +43,11 @@ jobs:
           # 2. 將 support/ 目錄下的所有 .h 標頭檔投射到根目錄
           cp support/*.h .
           
-          # 3. 【核心修正：解決 malloc/dynarray.h 缺失】
-          # 在本地建立 Makefile 預期尋找的 malloc 目錄，並把支持庫裡的記憶體配置標頭檔投射進去！
+          # 3. 【核心修正：解決 malloc/ 內部所有 .h 與 .c 相依檔缺失】
+          # 不只複製標頭檔，直接將整個 support/malloc/ 底下的檔案完整投射到根目錄的 malloc 資料夾
+          # 這能 100% 根除 "No rule to make target 'malloc/dynarray-skeleton.c'" 的編譯死結！
           mkdir -p malloc
-          cp support/malloc/*.h malloc/
+          cp support/malloc/* malloc/
           
           # 4. 【核心除錯 1】修正新版 GCC 對舊式微軟運行庫變數的相容性錯誤
           sed -i 's/__mb_cur_max/MB_CUR_MAX/g' pc/nl_langinfo.c
