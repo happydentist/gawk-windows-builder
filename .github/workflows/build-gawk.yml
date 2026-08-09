@@ -14,16 +14,15 @@ jobs:
     runs-on: windows-latest
     
     steps:
-      # 1. 關鍵：直接利用 GitHub 官方 Actions 去抓取 gawk-mirror 倉庫
-      # 這完全走 GitHub 雲端核心網路，不花費 1 毫秒，且 100% 不會發生 Git 或 404 錯誤
+      # 1. 修正：精確指定 refs/tags/ 前綴，告訴 Git 這是標籤，非分支
       - name: Fetch gawk 5.4.1 source natively
         uses: actions/checkout@v4
         with:
           repository: 'gnu-mirror-unofficial/gawk'
-          ref: 'gawk-5.4.1'
+          ref: 'refs/tags/gawk-5.4.1'
           path: 'gawk-5.4.1'
 
-      # 2. 獨立把你的專案簽出到另一個目錄（用來存放打包和發布 Release 用的腳本環境）
+      # 2. 簽出目前專案環境（供後續 Release 腳本辨識）
       - name: Check out current repository
         uses: actions/checkout@v4
         with:
@@ -53,7 +52,7 @@ jobs:
           echo 'char *nl_langinfo(int item) { return "UTF-8"; }' >> shim/langinfo.h
           cp shim/langinfo.h .
           
-          # 執行編譯（此處在 LF 參數中增加了 -static 以實現完全靜態連結，免除所有 runtime DLL）
+          # 執行編譯（包含 -static 完全靜態連結，免除 runtime DLL）
           make all \
             CC=gcc O=.o \
             CF="-O2 -gdwarf-2 -g3 -std=gnu89 -Wno-implicit-function-declaration -Wno-int-conversion -Wno-incompatible-pointer-types -Wno-return-mismatch" \
