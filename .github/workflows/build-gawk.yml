@@ -22,19 +22,22 @@ jobs:
         with:
           msystem: MINGW64
           update: false
-          install: make mingw-w64-x86_64-gcc
+          install: make mingw-w64-x86_64-gcc git autoconf automake gettext bison flex
 
-      - name: Fetch gawk source from reliable mirror
+      - name: Clone gawk Source via GitHub Internal Mirror
         shell: msys2 {0}
         run: |
           set -euo pipefail
           
-          # 下載 gawk 5.4.1
-          curl -fsSL -o "gawk-5.4.1.tar.gz" "https://kernel.org"
+          # 徹底放棄從外部網站下載！直接走 GitHub 機房內部網路克隆官方鏡像
+          git clone https://github.com gawk-5.4.1
+          cd gawk-5.4.1
           
-          # 關鍵修正：棄用 xzf，改用具備自動格式偵測且包容度最強的 -xf 參數！
-          # 這能 100% 免疫 curl 在背景自動將 gzip 網頁串流解壓造成的格式錯亂問題。
-          tar -xf "gawk-5.4.1.tar.gz"
+          # 精確切換到 gawk 5.4.1 的官方發布 Tag
+          git checkout gawk-5.4.1
+          
+          # 由於是從 Git 倉庫克隆，需要自動生成 Windows 編譯所需的基礎檔案
+          ./bootstrap.sh
 
       - name: Build gawk.exe (Static Build)
         shell: msys2 {0}
@@ -42,7 +45,7 @@ jobs:
           set -euo pipefail
           cd "gawk-5.4.1"
           
-          # 複製 pc 移植目錄檔案
+          # 複製 pc 移植目錄檔案（完全繼承 freeswitch 的精髓）
           find pc -maxdepth 1 -type f ! -name ChangeLog -exec cp {} . \;
           
           # 建立最小的 langinfo 兼容標頭檔
@@ -51,7 +54,7 @@ jobs:
           echo 'char *nl_langinfo(int item) { return "UTF-8"; }' >> shim/langinfo.h
           cp shim/langinfo.h .
           
-          # 執行編譯（此處在 LF 參數中增加了 -static 以實現完全靜態連結）
+          # 執行編譯（在 LF 參數中增加了 -static 以實現完全靜態連結，無 DLL 依賴）
           make all \
             CC=gcc O=.o \
             CF="-O2 -gdwarf-2 -g3 -std=gnu89 -Wno-implicit-function-declaration -Wno-int-conversion -Wno-incompatible-pointer-types -Wno-return-mismatch" \
@@ -95,5 +98,5 @@ jobs:
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
             --title "gawk 5.4.1 for Windows" \
-            --notes "基於 freeswitch 架構編譯的 GNU awk 5.4.1 靜態 Windows 版本。" \
+            --notes "結合 freeswitch 編譯架構與 GitHub 內部 Git 鏡像源生成的 GNU awk 5.4.1 靜態原生 Windows 版本。" \
             dist/gawk.exe dist/pgawk.exe dist/COPYING dist/sha256sums.txt || true
