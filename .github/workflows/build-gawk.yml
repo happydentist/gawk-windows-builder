@@ -17,12 +17,15 @@ jobs:
       - name: Check out this repository
         uses: actions/checkout@v4
 
-      - name: Fetch and Expand Source Natively
-        shell: powershell
+      - name: Fetch and Expand Source via GitHub CDN
+        shell: bash
         run: |
-          $url = "https://gnu.org"
-          Invoke-WebRequest -Uri $url -OutFile "gawk-5.4.1.tar.gz"
+          set -euo pipefail
+          # 改用 GitHub 官方核心 CDN 機房直連下載（100% 免疫 gnu.org 網路阻斷）
+          curl -fsSL -o "gawk-5.4.1.tar.gz" "https://github.com"
           tar -xf gawk-5.4.1.tar.gz
+          # 將解壓後的目錄名稱重新命名，以完美接軌 freeswitch 的後續編譯路徑
+          mv gawk-gawk-5.4.1 gawk-5.4.1
 
       - name: Set up MSYS2 / MinGW-w64
         uses: msys2/setup-msys2@v2
