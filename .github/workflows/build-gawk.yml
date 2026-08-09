@@ -35,11 +35,21 @@ jobs:
         run: |
           set -euo pipefail
           cd "gawk-5.4.1"
+          
+          # 1. 關鍵修正：將 Windows 移植專用的 pc 檔案複製到根目錄
           find pc -maxdepth 1 -type f ! -name ChangeLog -exec cp {} . \;
+          
+          # 2. 核心修正：新版 gawk 必須將 posix/ 目錄下的 regex.h 等檔案複製出來，否則編譯會報錯缺失
+          cp posix/regex.h .
+          cp pc/config.h .
+          
+          # 3. 建立最小的 langinfo 兼容標頭檔
           mkdir -p shim
           echo '#define CODESET 0' > shim/langinfo.h
           echo 'char *nl_langinfo(int item) { return "UTF-8"; }' >> shim/langinfo.h
           cp shim/langinfo.h .
+          
+          # 執行編譯（-static 參數實現完全靜態連結，免除所有運行庫 DLL）
           make all \
             CC=gcc O=.o \
             CF="-O2 -gdwarf-2 -g3 -std=gnu89 -Wno-implicit-function-declaration -Wno-int-conversion -Wno-incompatible-pointer-types -Wno-return-mismatch" \
