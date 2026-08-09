@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   build:
-    name: Build and release gawk.exe (Windows-MSYS2)
+    name: Build and release gawk.exe (MinGW-w64)
     runs-on: windows-latest
     
     steps:
@@ -22,46 +22,32 @@ jobs:
         with:
           msystem: MINGW64
           update: false
-          install: make mingw-w64-x86_64-gcc curl tar
+          install: make mingw-w64-x86_64-gcc
 
-      - name: Fetch gawk source from kernel.org mirror
+      - name: Fetch gawk source from ftp.gnu.org
         shell: msys2 {0}
         run: |
           set -euo pipefail
-          
-          # 使用 Linux 基金會的官方 GNU 鏡像站，此網址能 100% 避開 ftp.gnu.org 的各種地區跳轉與 404/503 HTML 陷阱
-          curl -fsSL -o "gawk-5.4.1.tar.gz" "https://kernel.org"
-          
-          # 檢查下載檔案大小是否大於 1MB（防範抓到幾 KB 的 HTML 錯誤頁面）
-          FILE_SIZE=$(wc -c < gawk-5.4.1.tar.gz)
-          if [ "$FILE_SIZE" -lt 1000000 ]; then
-            echo "::error::下載的檔案不完整，可能抓到了錯誤網頁！檔案大小: $FILE_SIZE 位元組"
-            head -n 10 gawk-5.4.1.tar.gz
-            exit 1
-          fi
-          
-          # 使用萬用解壓參數
-          tar -xvf "gawk-5.4.1.tar.gz"
+          # 這裡完全還原 freeswitch 的下載邏輯，版本指定為 5.4.1
+          curl -fsSL -o "gawk-5.4.1.tar.gz" "https://gnu.org"
+          tar xzf "gawk-5.4.1.tar.gz"
 
-      - name: Prepare Windows Build Files
+      - name: Build gawk.exe (Static Build)
         shell: msys2 {0}
         run: |
           set -euo pipefail
           cd "gawk-5.4.1"
+          
+          # 複製 pc 移植目錄檔案
           find pc -maxdepth 1 -type f ! -name ChangeLog -exec cp {} . \;
           
+          # 建立最小的 langinfo 兼容標頭檔
           mkdir -p shim
           echo '#define CODESET 0' > shim/langinfo.h
           echo 'char *nl_langinfo(int item) { return "UTF-8"; }' >> shim/langinfo.h
           cp shim/langinfo.h .
-
-      - name: Build gawk.exe (Static Link)
-        shell: msys2 {0}
-        run: |
-          set -euo pipefail
-          cd "gawk-5.4.1"
           
-          # 加入 -static 參數進行 Windows 完全靜態連結編譯
+          # 執行編譯（此處在 LF 參數中增加了 -static 以實現完全靜態連結）
           make all \
             CC=gcc O=.o \
             CF="-O2 -gdwarf-2 -g3 -std=gnu89 -Wno-implicit-function-declaration -Wno-int-conversion -Wno-incompatible-pointer-types -Wno-return-mismatch" \
@@ -75,8 +61,15 @@ jobs:
           cd "gawk-5.4.1"
           ./gawk.exe --version
           test "$(echo 'hello world' | ./gawk.exe '{ print toupper($2), 1+2 }')" = "WORLD 3"
+          
+          # 驗證是否成功排除 MSYS/Cygwin 依賴，成為純 Windows 靜態原生執行檔
+          objdump -p gawk.exe | grep 'DLL Name'
+          if objdump -p gawk.exe | grep -Ei 'cygwin|msys' ; then
+            echo "::error::gawk.exe 依賴了非原生的運行庫 DLL！"
+            exit 1
+          fi
 
-      - name: Package Binaries
+      - name: Package
         shell: msys2 {0}
         run: |
           set -euo pipefail
@@ -84,16 +77,19 @@ jobs:
           strip gawk.exe pgawk.exe
           mkdir ../dist
           cp gawk.exe pgawk.exe COPYING ../dist/
+          cd ../dist
+          sha256sum gawk.exe pgawk.exe COPYING > sha256sums.txt
 
-      - name: Create GitHub Release
+      - name: Create GitHub release
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
+          # 在您的儲存庫 Release 頁面自動上傳與發布成品
           gh release create "v5.4.1" \
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
             --title "gawk 5.4.1 for Windows" \
-            --notes "本檔案由 GitHub Actions 透過 Windows-MSYS2 環境與 MinGW-w64 交叉靜態編譯而成，為純原生、無依賴的 Windows 執行檔。" \
-            dist/gawk.exe dist/pgawk.exe dist/COPYING || true
+            --notes "基於 freeswitch 架構編譯的 GNU awk 5.4.1 靜態 Windows 版本。" \
+            dist/gawk.exe dist/pgawk.exe dist/COPYING dist/sha256sums.txt || true
