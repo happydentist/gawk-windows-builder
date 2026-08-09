@@ -1,0 +1,68 @@
+name: Build gawk for Windows
+
+on:
+  push:
+    branches: [ "main", "master" ]
+  pull_request:
+    branches: [ "main", "master" ]
+  workflow_dispatch: # 允許你隨時手動點擊按鈕來觸發編譯
+
+jobs:
+  mingw-build:
+    runs-on: ubuntu-latest
+    
+    steps:
+    # 1. 複製專案原始碼
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+
+    # 2. 安裝 Linux 上的 Windows 交叉編譯工具鏈
+    - name: Install MinGW Cross-Compiler
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y mingw-w64 binutils-mingw-w64 build-essential wget xz-utils
+
+    # 3. 下載並解壓 gawk 5.4.1 官方原始碼
+    - name: Download gawk 5.4.1 Source
+      run: |
+        wget https://gnu.org
+        tar -xf gawk-5.4.1.tar.xz
+
+    # 4. 配置與靜態編譯
+    - name: Configure and Compile (Static Link)
+      run: |
+        cd gawk-5.4.1
+        
+        # --host=x86_64-w64-mingw32: 指定編譯為 Windows 64位元版本
+        # LDFLAGS="-static": 強制將所有依賴庫（如 winpthread, gcc_s）直接封裝進 exe
+        ./configure \
+          --host=x86_64-w64-mingw32 \
+          --prefix=${{ github.workspace }}/output \
+          --disable-shared \
+          --enable-static \
+          LDFLAGS="-static" \
+          CFLAGS="-O3"
+
+        # 使用多核心併發編譯
+        make -j$(nproc)
+
+    # 5. 安裝產物到指定的輸出資料夾
+    - name: Install Binaries
+      run: |
+        cd gawk-5.4.1
+        make install
+
+    # 6. 檢查編譯成品
+    - name: Verify Executable
+      run: |
+        ls -lh ${{ github.workspace }}/output/bin/
+        file ${{ github.workspace }}/output/bin/gawk.exe || true
+
+    # 7. 上傳編譯好的 .exe 檔案作為 Artifact
+    - name: Upload Windows exe
+      uses: actions/upload-artifact@v4
+      with:
+        name: gawk-5.4.1-windows-static
+        path: |
+          ${{ github.workspace }}/output/bin/gawk.exe
+          ${{ github.workspace }}/output/bin/awk.exe
