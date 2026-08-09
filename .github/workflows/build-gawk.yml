@@ -5,38 +5,106 @@ on:
     branches: [ "main", "master" ]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
-    name: Build gawk.exe (MinGW-w64)
+    name: Build and release gawk.exe (MinGW-w64)
     runs-on: windows-latest
+    
     steps:
-      - uses: actions/checkout@v4
-      - run: tar -xf gawk-5.4.1.tar.gz
-      - uses: msys2/setup-msys2@v2
+      - name: Check out this repository
+        uses: actions/checkout@v4
+
+      - name: Expand Local Source
+        shell: bash
+        run: |
+          set -euo pipefail
+          tar -xf gawk-5.4.1.tar.gz
+
+      - name: Set up MSYS2 / MinGW-w64
+        uses: msys2/setup-msys2@v2
         with:
           msystem: MINGW64
+          update: false
           install: make mingw-w64-x86_64-gcc
-      - shell: msys2 {0}
+
+      - name: Build gawk.exe (Static Build)
+        shell: msys2 {0}
         run: |
-          cd gawk-5.4.1
+          set -euo pipefail
+          cd "gawk-5.4.1"
+          
+          # 1. 複製官方 pc/ 目錄下的 Windows 專用移植檔到根目錄
           find pc -maxdepth 1 -type f ! -name ChangeLog -exec cp {} . \;
           cp pc/config.h .
+          
+          # 2. 將 support/ 內部所有的結構和源代碼攤平到根目錄
           cp support/*.h .
           cp support/*.c .
-          mkdir -p malloc && cp support/malloc/* malloc/
+          
+          # 3. 完整投射整個 support/malloc/ 目錄下的所有檔案
+          mkdir -p malloc
+          cp support/malloc/* malloc/
+          
+          # 4. 修正新版 GCC 對舊式微軟運行庫變數的相容性錯誤
           sed -i 's/__mb_cur_max/MB_CUR_MAX/g' pc/nl_langinfo.c
+          
+          # 5. 全面採用 Windows 原生 time.h 函數，解決 strftime 參數過多錯誤
           sed -i 's/#define strftime rpl_strftime/\/* #define strftime rpl_strftime *\//g' config.h
           echo "#define HAVE_STRFTIME 1" >> config.h
+          
+          # 6. 強制宣布 Windows 擁有原生的 strcoll 函數，根除 linker 重複定義錯誤
           sed -i 's/#define HAVE_STRCOLL 0/#define HAVE_STRCOLL 1/g' config.h
           echo "" > missing_d/strcoll.c
-          # 編譯必要物件
+          
+          # 7. 完整手動編譯 pc/Makefile 遺漏定義的 dynarray 物件檔案 (無任何省略)
           gcc -c -O2 -I. -I./support -DHAVE_CONFIG_H malloc/dynarray_resize.c
-          # ... (省略其他編譯步驟，使用優化參數與現代化靜態連結)
-          make all CC=gcc O=.o LF="-static -s" LF2="-lws2_32"
-      - run: |
-          cd gawk-5.4.1
+          gcc -c -O2 -I. -I./support -DHAVE_CONFIG_H malloc/dynarray_emplace_enlarge.c
+          gcc -c -O2 -I. -I./support -DHAVE_CONFIG_H malloc/dynarray_finalize.c
+          gcc -c -O2 -I. -I./support -DHAVE_CONFIG_H malloc/dynarray_at_failure.c
+          gcc -c -O2 -I. -I./support -DHAVE_CONFIG_H malloc/dynarray_resize_clear.c
+          
+          # 8. 執行完全靜態連結原生編譯 (徹底移除了害死程序的舊版 32位元 -lmsvcp60，改用標準 ws2_32)
+          make all \
+            CC=gcc O=.o \
+            CF="-O2 -gdwarf-2 -g3 -Wno-implicit-function-declaration -Wno-int-conversion -Wno-incompatible-pointer-types -Wno-return-mismatch" \
+            OBJ=popen.o LNK=LMINGW32 PLNK=PLMINGW32 \
+            LF="-gdwarf-2 -g3 -static" LF2="-lws2_32" RSP=
+
+      - name: Smoke test
+        shell: msys2 {0}
+        run: |
+          set -euo pipefail
+          cd "gawk-5.4.1"
+          ./gawk.exe --version
+          test "$(echo 'hello world' | ./gawk.exe '{ print toupper($2), 1+2 }')" = "WORLD 3"
+          objdump -p gawk.exe | grep 'DLL Name'
+          if objdump -p gawk.exe | grep -Ei 'cygwin|msys' ; then
+            exit 1
+          fi
+
+      - name: Package
+        shell: msys2 {0}
+        run: |
+          set -euo pipefail
+          cd "gawk-5.4.1"
           strip gawk.exe
-          mkdir -p ../dist && cp gawk.exe ../dist/
-      - uses: actions/upload-artifact@v4
-        with:
-          path: dist/gawk.exe
+          mkdir ../dist
+          cp gawk.exe COPYING ../dist/
+          cd ../dist
+          sha256sum gawk.exe COPYING > sha256sums.txt
+
+      - name: Create GitHub release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release create "v5.4.1" \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "gawk 5.4.1 for Windows" \
+            --notes "GNU awk 5.4.1 native static 64-bit windows binary with modern MinGW-w64." \
+            dist/gawk.exe dist/COPYING dist/sha256sums.txt || true
