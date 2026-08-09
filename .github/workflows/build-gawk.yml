@@ -40,10 +40,9 @@ jobs:
           find pc -maxdepth 1 -type f ! -name ChangeLog -exec cp {} . \;
           cp pc/config.h .
           
-          # 2. 【核心修正】將新版 gawk 藏在 support/ 目錄下的正規表示式標頭檔提取到根目錄
-          # 這能完美解決 "No rule to make target 'regex.h'" 的 Makefile 斷代相依性 Bug！
-          cp support/regex.h .
-          cp support/regex_internal.h .
+          # 2. 【核心修正】將 support/ 目錄下的所有 .h 標頭檔（包括 dfa.h、regex.h、getopt.h 等）
+          # 一次性完全投射到根目錄，徹底解決新版 gawk 結構更動導致的 Makefile 斷代相依性 Bug！
+          cp support/*.h .
           
           # 3. 建立最小的 langinfo 兼容標頭檔
           mkdir -p shim
