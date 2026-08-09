@@ -30,7 +30,7 @@ jobs:
           update: false
           install: make mingw-w64-x86_64-gcc
 
-      - name: Build gawk.exe (Strict Native Build)
+      - name: Build gawk.exe (Volker Kiefel Style Optimization)
         shell: msys2 {0}
         run: |
           set -euo pipefail
@@ -73,28 +73,14 @@ jobs:
           gcc -c -O2 -I. -I./support -DHAVE_CONFIG_H malloc/dynarray_at_failure.c
           gcc -c -O2 -I. -I./support -DHAVE_CONFIG_H malloc/dynarray_resize_clear.c
           
-          # 9. 【核心戰略修正】同時啟用三個靜態參數，強制把 gcc、winpthread 核心通通拍扁打進 exe 內部
+          # 9. 【終極修正：徹底移除 -static】
+          # 拿掉所有會導致環境變數初始化死鎖的 -static 參數，完全還原 Volker Kiefel 的編譯策略
+          # 僅透過 LF2 補齊 Winsock2 網路庫即可
           make all \
             CC=gcc O=.o \
             CF="-O2 -Wno-implicit-function-declaration -Wno-int-conversion -Wno-incompatible-pointer-types -Wno-return-mismatch" \
             OBJ=popen.o LNK=LMINGW32 PLNK=PLMINGW32 \
-            LF="-static -static-libgcc -static-libstdc++" LF2="-lws2_32" RSP=
-
-      - name: Diagnostic Step (檢查這顆 EXE 到底偷黏了哪些 DLL)
-        shell: msys2 {0}
-        run: |
-          cd "gawk-5.4.1"
-          echo "==== [DLL 依賴檢查清單] ===="
-          objdump -p gawk.exe | grep -i 'DLL Name'
-          echo "============================"
-
-      - name: Native Windows CMD Verification
-        shell: cmd
-        run: |
-          cd gawk-5.4.1
-          echo "==== [在 Windows 原生環境測試執行] ===="
-          gawk.exe --version
-          echo "========================================"
+            LF="" LF2="-lws2_32" RSP=
 
       - name: Package
         shell: msys2 {0}
@@ -117,5 +103,5 @@ jobs:
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
             --title "gawk 5.4.1 for Windows" \
-            --notes "GNU awk 5.4.1 static 64-bit windows binary." \
+            --notes "GNU awk 5.4.1 native 64-bit windows binary built with Volker Kiefel's official link strategy." \
             dist/gawk.exe dist/COPYING dist/sha256sums.txt || true
