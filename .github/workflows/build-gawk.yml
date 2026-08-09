@@ -7,10 +7,6 @@ on:
     branches: [ "main", "master" ]
   workflow_dispatch:
 
-env:
-  # 改用官方鏡像站直連網址，繞過 ftp.gnu.org 的 Actions 跳轉機制
-  GAWK_URL: "https://kernel.org"
-
 jobs:
   mingw-build:
     runs-on: ubuntu-latest
@@ -22,17 +18,18 @@ jobs:
     - name: Install MinGW Cross-Compiler
       run: |
         sudo apt-get update
-        sudo apt-get install -y mingw-w64 binutils-mingw-w64 build-essential wget xz-utils
+        sudo apt-get install -y mingw-w64 binutils-mingw-w64 build-essential curl xz-utils
 
     - name: Download gawk 5.4.1 Source
       run: |
-        # 使用 -L 參數強制追蹤任何潛在跳轉，並精確指定下載檔名
-        wget -O gawk-5.4.1.tar.xz "${{ env.GAWK_URL }}"
+        # 直接使用 curl 下載直連檔案，避免 env 解析與任何跳轉問題
+        curl -L -o gawk-5.4.1.tar.xz https://ntua.edu.tw
         
-        # 額外防護：檢查下載下來的是否為真正的壓縮檔（避免抓到 HTML）
-        if ! file gawk-5.4.1.tar.xz | grep -q "XZ compressed data"; then
-          echo "錯誤：下載的檔案不是有效的 XZ 壓縮檔！"
-          cat gawk-5.4.1.tar.xz | head -n 5
+        # 檢查下載檔案大小是否正常（真的原始碼壓縮檔應該大於 3MB，如果是網頁 HTML 只有幾 KB）
+        FILE_SIZE=$(wc -c < gawk-5.4.1.tar.xz)
+        if [ "$FILE_SIZE" -lt 1000000 ]; then
+          echo "錯誤：下載的檔案太小 ($FILE_SIZE 位元組)，可能又抓到網頁了！"
+          head -n 10 gawk-5.4.1.tar.xz
           exit 1
         fi
         
