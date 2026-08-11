@@ -1,8 +1,6 @@
 name: Build gawk 5.4.1 for Windows
 
 on:
-  push:
-    branches: [ "main", "master" ]
   workflow_dispatch:
 
 permissions:
