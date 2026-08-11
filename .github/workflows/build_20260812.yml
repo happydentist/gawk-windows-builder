@@ -1,0 +1,97 @@
+name: build-gawk-windows-freeswitch-style
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build and release gawk.exe (MinGW-w64)
+    runs-on: windows-latest
+    steps:
+      - name: Check out this repository
+        uses: actions/checkout@v4
+
+      # 💡 建立與 freeswitch 相同的 minimal shim，防止 Windows 找不到 langinfo.h
+      # 自動在工作目錄建立，免去手動 commit 標頭檔的麻煩
+      - name: Create langinfo shim
+        run: |
+          mkdir -p shim
+          echo "" > shim/langinfo.h
+
+      - name: Set up MSYS2 / MinGW-w64
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: false # 💡 沿用 freeswitch 的優化，不主動更新套件，防止網路干擾
+          install: make mingw-w64-x86_64-gcc
+
+      # 💡 完美的變數傳遞：在 env 區塊內傳入，run 內只使用 $VERSION，100% 根除 nested brace 網址被截斷的 Bug
+      - name: Fetch gawk source from ftp.gnu.org
+        shell: msys2 {0}
+        env:
+          VERSION: "5.4.1" # 👈 直接在這裡指定你想編譯的版本
+        run: |
+          set -euo pipefail
+          curl -fsSL -o "gawk-$VERSION.tar.gz" "https://ftp.gnu.org/gnu/gawk/gawk-$VERSION.tar.gz"
+          tar xzf "gawk-$VERSION.tar.gz"
+
+      - name: Build gawk.exe
+        shell: msys2 {0}
+        env:
+          VERSION: "5.4.1"
+        run: |
+          set -euo pipefail
+          cd "gawk-$VERSION"
+          
+          # 套用 freeswitch 的核心技術：複製 pc/ 的 Windows 專用建置檔到根目錄
+          find pc -maxdepth 1 -type f ! -name ChangeLog -exec cp {} . \;
+          cp ../shim/langinfo.h .
+          
+          # 調用預置的 Makefile 進行免 configure 原生編譯
+          make all \
+            CC=gcc O=.o \
+            CF="-O2 -gdwarf-2 -g3 -std=gnu89 -Wno-implicit-function-declaration -Wno-int-conversion -Wno-incompatible-pointer-types -Wno-return-mismatch" \
+            OBJ=popen.o LNK=LMINGW32 PLNK=PLMINGW32 \
+            LF="-gdwarf-2 -g3" LF2=-lmsvcp60 RSP=
+
+      - name: Smoke test
+        shell: msys2 {0}
+        env:
+          VERSION: "5.4.1"
+        run: |
+          set -euo pipefail
+          cd "gawk-$VERSION"
+          ./gawk.exe --version
+          test "$(echo 'hello world' | ./gawk.exe '{ print toupper($2), 1+2 }')" = "WORLD 3"
+
+      - name: Package
+        shell: msys2 {0}
+        env:
+          VERSION: "5.4.1"
+        run: |
+          set -euo pipefail
+          cd "gawk-$VERSION"
+          strip gawk.exe pgawk.exe
+          mkdir -p ../dist
+          cp gawk.exe pgawk.exe COPYING ../dist/
+          cd ../dist
+          sha256sum gawk.exe pgawk.exe COPYING > sha256sums.txt
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+        with:
+          files: |
+            dist/gawk.exe
+            dist/pgawk.exe
+            dist/COPYING
+            dist/sha256sums.txt
+          token: ${{ secrets.GITHUB_TOKEN }}
+          draft: false
+          prerelease: false
