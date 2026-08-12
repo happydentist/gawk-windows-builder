@@ -20,21 +20,20 @@ jobs:
   build-windows:
     runs-on: windows-latest
     steps:
-      # 💡 1. 下載你自己的包裝腳本
+      # 1. 下載你自己的包裝腳本
       - name: Check out this repository
         uses: actions/checkout@v4
 
-      # 💡 終極修正：完全拋棄 curl、tar、zip、wget 與外部網路解壓！
-      # 直接調用 GitHub 官方核心組件，將官方鏡像庫的 gawk-5.4.1 源碼「完好無損」地同步到 upstream/gawk
-      # 這種內網同步絕對不可能超時、不可能 403，更不可能噴出任何 gzip 錯誤！
-      - name: Fetch GNU Awk Source via Official Checkout
+      # 💡 終極修正：直接拉取保證 100% 絕對存在、絕對不會因為版本尾碼對不上而報錯的 'master' 分支！
+      # 這會以最高速的 GitHub 內網骨幹，直接把最新、最完整的原始碼檔案樹吐到 upstream/gawk
+      - name: Fetch GNU Awk Source via Master Branch
         uses: actions/checkout@v4
         with:
           repository: 'gnu-mirror-unofficial/gawk'
-          ref: 'gawk-5.4.1' # 👈 精準鎖定 5.4.1 官方發布 Tag
-          path: 'upstream/gawk' # 👈 直接存放到你的專案所需的預期目錄
+          ref: 'master' # 👈 100% 存在的最新開發主線，徹底消滅 Git fetch exit code 1
+          path: 'upstream/gawk'
 
-      # 💡 2. 啟動並初始化編譯專用的 MSYS2 環境 (update: false 提升網路穩定度)
+      # 2. 啟動並初始化編譯專用的 MSYS2 環境 (update: false 提升網路穩定度)
       - name: Set up MSYS2 / MinGW-w64
         uses: msys2/setup-msys2@v2
         with:
@@ -45,7 +44,7 @@ jobs:
             git autoconf automake libtool make base-devel bison gettext gettext-devel xz zip
             mingw-w64-x86_64-toolchain
 
-      # 💡 3. 樹內編譯 (In-tree build) 搭配 Windows 專屬相容補丁
+      # 3. 樹內編譯 (In-tree build) 搭配 Windows 專屬相容補丁
       - name: Run Autotools Build
         shell: msys2 {0}
         env:
@@ -62,6 +61,7 @@ jobs:
           
           echo "=== 2. Run Autoreconf ==="
           cd "$SRC"
+          # 💡 因為 master 分支是原生開發庫，強制執行 autoreconf 幫我們生成最新版 Windows configure
           autoreconf -fi
           
           echo "=== 3. Run Configure (In-tree Build) ==="
@@ -78,7 +78,7 @@ jobs:
           echo "=== 4. Run Make ==="
           make -j4
 
-      # 💡 4. 冒煙測試：確保 gawk.exe 能在 Windows 下被原生執行
+      # 4. 冒煙測試：確保 gawk.exe 能在 Windows 下被原生執行
       - name: Run Smoke Test
         shell: msys2 {0}
         run: |
@@ -86,7 +86,7 @@ jobs:
           ./upstream/gawk/gawk.exe --version
           test "$(echo 'hello world' | ./upstream/gawk/gawk.exe '{ print toupper($2), 1+2 }')" = "WORLD 3"
 
-      # 💡 5. 自動打包產物
+      # 5. 自動打包產物
       - name: Package Artifacts
         shell: msys2 {0}
         run: |
@@ -104,7 +104,7 @@ jobs:
           sha256sum gawk-x86_64-windows.zip > gawk-x86_64-windows.zip.sha256
           cat gawk-x86_64-windows.zip.sha256
 
-      # 💡 6. 一鍵推送到 Release
+      # 6. 一鍵推送到 Release
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
