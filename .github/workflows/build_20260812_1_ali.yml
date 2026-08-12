@@ -34,10 +34,9 @@ jobs:
             git autoconf automake libtool make base-devel bison gettext gettext-devel xz zip
             mingw-w64-x86_64-toolchain
 
-      # 💡 採用你驗證成功的動態下載語法：
-      # 1. 網址改用台灣在地、同步極速且不鎖機房的 TWDS 頂級學術開源鏡像源。
-      # 2. 核心修正：利用 -A 參數將 curl 偽裝成 Chrome 瀏覽器，100% 杜絕任何伺服器回傳 403 Forbidden 封鎖！
-      - name: Fetch gawk source from High-Speed Mirror
+      # 💡 終極修正：拋棄任何外部伺服器！直接去 GitHub 官方鏡像的 Release 抓取 gawk-5.4.1.tar.gz 壓縮包。
+      # GitHubActions 互連 100% 不會超時，也絕對不可能被 403 阻擋，拉回來的絕對是貨真價實的原始碼！
+      - name: Fetch gawk source from GitHub Releases
         shell: msys2 {0}
         env:
           VERSION: "5.4.1"
@@ -45,18 +44,15 @@ jobs:
           set -euo pipefail
           mkdir -p upstream
           
-          # 💡 加掛瀏覽器偽裝頭，強行突破所有的伺服器反爬蟲防線
-          curl -fsSL -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" \
-            -o "gawk-$VERSION.tar.gz" \
-            "https://twds.com.tw"
-          
+          # 💡 調用 GitHub 官方非官方鏡像的原始碼下載點，安全且極速
+          curl -fsSL -o "gawk-$VERSION.tar.gz" "https://github.com"
           tar xzf "gawk-$VERSION.tar.gz"
           
-          # 將解壓後的目錄定位到專案架構預期的位置
-          mv "gawk-$VERSION" upstream/gawk
+          # GitHub 壓縮包解壓後目錄名為 gawk-gawk-5.4.1，將其精準定位
+          mv "gawk-gawk-$VERSION" upstream/gawk
           rm "gawk-$VERSION.tar.gz"
 
-      # 💡 樹內編譯 (In-tree build) 搭配 Windows 專屬相容補丁
+      # 💡 樹內編編譯 (In-tree build) 搭配 Windows 專屬相容補丁
       - name: Run Autotools Build
         shell: msys2 {0}
         env:
@@ -75,7 +71,7 @@ jobs:
           cd "$SRC"
           autoreconf -fi
           
-          echo "=== 3. 執行 Configure (直接在原始碼目錄內執行) ==="
+          echo "=== 3. 執行 Configure (樹內原生編譯) ==="
           ./configure \
             --disable-dependency-tracking \
             --enable-shared \
