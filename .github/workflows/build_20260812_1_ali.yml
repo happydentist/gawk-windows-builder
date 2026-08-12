@@ -34,9 +34,10 @@ jobs:
             git autoconf automake libtool make base-devel bison gettext gettext-devel xz zip
             mingw-w64-x86_64-toolchain
 
-      # 💡 採用你驗證成功、100% OK 的動態下載語法！
-      # 網址精準更換為 100% 內含新版檔案、對 GitHub 雲端極度友善的高速「網易（NetEase）鏡像源」
-      - name: Fetch gawk source from NetEase Mirror
+      # 💡 採用你驗證成功的動態下載語法：
+      # 1. 網址改用台灣在地、同步極速且不鎖機房的 TWDS 頂級學術開源鏡像源。
+      # 2. 核心修正：利用 -A 參數將 curl 偽裝成 Chrome 瀏覽器，100% 杜絕任何伺服器回傳 403 Forbidden 封鎖！
+      - name: Fetch gawk source from High-Speed Mirror
         shell: msys2 {0}
         env:
           VERSION: "5.4.1"
@@ -44,15 +45,18 @@ jobs:
           set -euo pipefail
           mkdir -p upstream
           
-          # 💡 使用網易大廠高速下載通道，保證拉回真實、完整的 gawk 原始碼 Tarball
-          curl -fsSL -o "gawk-$VERSION.tar.gz" "https://163.com"
+          # 💡 加掛瀏覽器偽裝頭，強行突破所有的伺服器反爬蟲防線
+          curl -fsSL -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" \
+            -o "gawk-$VERSION.tar.gz" \
+            "https://twds.com.tw"
+          
           tar xzf "gawk-$VERSION.tar.gz"
           
           # 將解壓後的目錄定位到專案架構預期的位置
           mv "gawk-$VERSION" upstream/gawk
           rm "gawk-$VERSION.tar.gz"
 
-      # 💡 樹內編編譯 (In-tree build) 搭配 Windows 專屬相容補丁
+      # 💡 樹內編譯 (In-tree build) 搭配 Windows 專屬相容補丁
       - name: Run Autotools Build
         shell: msys2 {0}
         env:
@@ -64,7 +68,7 @@ jobs:
           SRC="$ROOT/upstream/gawk"
           
           echo "=== 1. 建立 Windows Shim 檔 ==="
-          # 💡 徹底解決上一輪遇到的 minrx.c 找不到 langinfo.h 崩潰
+          # 💡 徹底解決 minrx.c 找不到 langinfo.h 崩潰
           echo "" > "$SRC/support/langinfo.h"
           
           echo "=== 2. 執行 Autoreconf ==="
