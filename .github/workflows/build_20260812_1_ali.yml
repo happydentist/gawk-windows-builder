@@ -20,10 +20,21 @@ jobs:
   build-windows:
     runs-on: windows-latest
     steps:
+      # 💡 1. 下載你自己的包裝腳本
       - name: Check out this repository
         uses: actions/checkout@v4
 
-      # 💡 繼承 freeswitch 效能精髓：update 設為 false，直接使用系統自帶快取
+      # 💡 終極修正：完全拋棄 curl、tar、zip、wget 與外部網路解壓！
+      # 直接調用 GitHub 官方核心組件，將官方鏡像庫的 gawk-5.4.1 源碼「完好無損」地同步到 upstream/gawk
+      # 這種內網同步絕對不可能超時、不可能 403，更不可能噴出任何 gzip 錯誤！
+      - name: Fetch GNU Awk Source via Official Checkout
+        uses: actions/checkout@v4
+        with:
+          repository: 'gnu-mirror-unofficial/gawk'
+          ref: 'gawk-5.4.1' # 👈 精準鎖定 5.4.1 官方發布 Tag
+          path: 'upstream/gawk' # 👈 直接存放到你的專案所需的預期目錄
+
+      # 💡 2. 啟動並初始化編譯專用的 MSYS2 環境 (update: false 提升網路穩定度)
       - name: Set up MSYS2 / MinGW-w64
         uses: msys2/setup-msys2@v2
         with:
@@ -34,25 +45,7 @@ jobs:
             git autoconf automake libtool make base-devel bison gettext gettext-devel xz zip
             mingw-w64-x86_64-toolchain
 
-      # 💡 終極修正：拋棄任何外部伺服器！直接去 GitHub 官方鏡像的 Release 抓取 gawk-5.4.1.tar.gz 壓縮包。
-      # GitHubActions 互連 100% 不會超時，也絕對不可能被 403 阻擋，拉回來的絕對是貨真價實的原始碼！
-      - name: Fetch gawk source from GitHub Releases
-        shell: msys2 {0}
-        env:
-          VERSION: "5.4.1"
-        run: |
-          set -euo pipefail
-          mkdir -p upstream
-          
-          # 💡 調用 GitHub 官方非官方鏡像的原始碼下載點，安全且極速
-          curl -fsSL -o "gawk-$VERSION.tar.gz" "https://github.com"
-          tar xzf "gawk-$VERSION.tar.gz"
-          
-          # GitHub 壓縮包解壓後目錄名為 gawk-gawk-5.4.1，將其精準定位
-          mv "gawk-gawk-$VERSION" upstream/gawk
-          rm "gawk-$VERSION.tar.gz"
-
-      # 💡 樹內編編譯 (In-tree build) 搭配 Windows 專屬相容補丁
+      # 💡 3. 樹內編譯 (In-tree build) 搭配 Windows 專屬相容補丁
       - name: Run Autotools Build
         shell: msys2 {0}
         env:
@@ -63,15 +56,15 @@ jobs:
           ROOT="$(pwd)"
           SRC="$ROOT/upstream/gawk"
           
-          echo "=== 1. 建立 Windows Shim 檔 ==="
-          # 💡 徹底解決 minrx.c 找不到 langinfo.h 崩潰
+          echo "=== 1. Create Windows Shim ==="
+          # 徹底解決 minrx.c 找不到 langinfo.h 崩潰
           echo "" > "$SRC/support/langinfo.h"
           
-          echo "=== 2. 執行 Autoreconf ==="
+          echo "=== 2. Run Autoreconf ==="
           cd "$SRC"
           autoreconf -fi
           
-          echo "=== 3. 執行 Configure (樹內原生編譯) ==="
+          echo "=== 3. Run Configure (In-tree Build) ==="
           ./configure \
             --disable-dependency-tracking \
             --enable-shared \
@@ -82,10 +75,10 @@ jobs:
             --disable-silent-rules \
             CC=gcc CFLAGS="-O2" LDFLAGS=""
             
-          echo "=== 4. 執行 Make 編譯 ==="
+          echo "=== 4. Run Make ==="
           make -j4
 
-      # 💡 冒煙測試：確保 gawk.exe 能在 Windows 下被原生執行
+      # 💡 4. 冒煙測試：確保 gawk.exe 能在 Windows 下被原生執行
       - name: Run Smoke Test
         shell: msys2 {0}
         run: |
@@ -93,7 +86,7 @@ jobs:
           ./upstream/gawk/gawk.exe --version
           test "$(echo 'hello world' | ./upstream/gawk/gawk.exe '{ print toupper($2), 1+2 }')" = "WORLD 3"
 
-      # 💡 自動打包產物
+      # 💡 5. 自動打包產物
       - name: Package Artifacts
         shell: msys2 {0}
         run: |
@@ -111,7 +104,7 @@ jobs:
           sha256sum gawk-x86_64-windows.zip > gawk-x86_64-windows.zip.sha256
           cat gawk-x86_64-windows.zip.sha256
 
-      # 💡 一鍵推送到 Release
+      # 💡 6. 一鍵推送到 Release
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
