@@ -63,9 +63,10 @@ jobs:
           autoreconf -fi
           
           echo "=== 3. Run Configure (In-tree Build) ==="
-          # 💡 終極修復：
-          # 1. 移除 -std=gnu89，改用 -std=gnu99 讓 dfa.c 內部的 for (int i...) 迴圈宣告合法通關。
-          # 2. 精準掛載 -Wno-error=mismatched-decls 等放寬旗標，強迫 GCC 赦免 getopt.c 內的 getenv 符號衝突。
+          # 💡 終極關鍵修復：
+          # 1. 使用 -std=gnu99 讓 dfa.c 內部的 for (int i...) 迴圈宣告合法通關。
+          # 2. 移除不相容的 -Wno-error=mismatched-decls，改掛載 GCC 最正統的 -fpermissive。
+          #    這能強迫 Windows GCC 赦免 getopt.c 內所有的 getenv 符號衝突，且絕對不會讓 configure 判定編譯器失效！
           ./configure \
             --disable-dependency-tracking \
             --enable-shared \
@@ -75,7 +76,7 @@ jobs:
             --enable-pma \
             --disable-silent-rules \
             CC=gcc \
-            CFLAGS="-O2 -std=gnu99 -Wno-error=implicit-function-declaration -Wno-error=mismatched-decls -Wno-error=int-conversion -Wno-error=incompatible-pointer-types" \
+            CFLAGS="-O2 -std=gnu99 -fpermissive -Wno-implicit-function-declaration -Wno-int-conversion -Wno-incompatible-pointer-types" \
             LDFLAGS=""
             
           echo "=== 4. Run Make ==="
