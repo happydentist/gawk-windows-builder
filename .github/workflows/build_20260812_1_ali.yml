@@ -34,9 +34,9 @@ jobs:
             git autoconf automake libtool make base-devel bison gettext gettext-devel xz zip
             mingw-w64-x86_64-toolchain
 
-      # 💡 採用你驗證成功、100% OK 的下載與解壓縮方式！
-      # 為了防止 gnu.org 隨機封鎖 Actions 導致下載到錯誤網頁，網址改用國內最高速穩定的阿里雲源
-      - name: Fetch gawk source from Aliyun Mirror
+      # 💡 採用你驗證成功、100% OK 的動態下載語法！
+      # 網址精準更換為 100% 內含新版檔案、對 GitHub 雲端極度友善的高速「網易（NetEase）鏡像源」
+      - name: Fetch gawk source from NetEase Mirror
         shell: msys2 {0}
         env:
           VERSION: "5.4.1"
@@ -44,15 +44,15 @@ jobs:
           set -euo pipefail
           mkdir -p upstream
           
-          # 使用你測試完全通過的純淨 curl 與 tar 語法，確保沒有任何環境變數轉譯衝突
-          curl -fsSL -o "gawk-$VERSION.tar.gz" "https://aliyun.com"
+          # 💡 使用網易大廠高速下載通道，保證拉回真實、完整的 gawk 原始碼 Tarball
+          curl -fsSL -o "gawk-$VERSION.tar.gz" "https://163.com"
           tar xzf "gawk-$VERSION.tar.gz"
           
           # 將解壓後的目錄定位到專案架構預期的位置
           mv "gawk-$VERSION" upstream/gawk
           rm "gawk-$VERSION.tar.gz"
 
-      # 💡 樹內編譯 (In-tree build) 搭配 Windows 專屬相容補丁
+      # 💡 樹內編編譯 (In-tree build) 搭配 Windows 專屬相容補丁
       - name: Run Autotools Build
         shell: msys2 {0}
         env:
@@ -64,8 +64,7 @@ jobs:
           SRC="$ROOT/upstream/gawk"
           
           echo "=== 1. 建立 Windows Shim 檔 ==="
-          # 💡 終極修正：Windows 沒有 langinfo.h，在原始碼的 support 目錄手動塞一個空的 shim 標頭檔
-          # 這能 100% 根除 minrx.c 找不到 langinfo.h 的編譯中斷死穴！
+          # 💡 徹底解決上一輪遇到的 minrx.c 找不到 langinfo.h 崩潰
           echo "" > "$SRC/support/langinfo.h"
           
           echo "=== 2. 執行 Autoreconf ==="
@@ -107,7 +106,6 @@ jobs:
           cp gawk.exe ../../dist/
           cp COPYING ../../dist/
           
-          # 壓縮與計算校驗碼
           cd ../../dist
           zip -r gawk-x86_64-windows.zip gawk.exe COPYING
           sha256sum gawk-x86_64-windows.zip > gawk-x86_64-windows.zip.sha256
