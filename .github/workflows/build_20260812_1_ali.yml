@@ -66,9 +66,8 @@ jobs:
           echo "=== 1. 準備 Windows 官方移植層檔案 ==="
           cd "$SRC"
           
-          # 1. 💡 終極物理修正：將原始碼資料夾內所有包含副檔名為 .c 或 .h 的檔案（包含 awk.h, builtin.c 等），
+          # 1. 💡 物理修正 1：利用 sed 將原始碼資料夾內所有包含副檔名為 .c 或 .h 的檔案（包含 awk.h, builtin.c 等），
           # 內置的 BOOL 巨集與列舉成員同步強行更名為 GAWK_BOOL。
-          # 這能保證主程式內部所有引用關係 100% 完整對齊，並徹底斷絕 Windows 系統環境引發的 redeclared 錯誤！
           find . -type f \( -name "*.c" -o -name "*.h" \) -exec sed -i 's/\bBOOL\b/GAWK_BOOL/g' {} +
           
           # 2. 💡 物理修正 2：利用 sed 將 pc/gawkmisc.pc 中與系統重複定義、導致衝突的 wctob 函數直接註解掉
@@ -82,11 +81,15 @@ jobs:
           cp pc/config.h ./config.h
           
           echo "=== 2. 執行 Windows 專用 Makefile 原生編譯 ==="
-          # 💡 所有核心代碼與系統衝突已被物理掃平，直接執行原生 Makefile 原生編譯
-          make -f pc/Makefile mingw32 \
+          # 💡 終極修正點：
+          # 1. 不要再調用會產生遞迴覆蓋的 'mingw32' 標籤，我們直接對準最底層的 'all' 標籤發動總攻！
+          # 2. 將 -fpermissive 與 -Wno-error=incompatible-pointer-types 直接注入給 CF 參數。
+          #    這能強迫 GCC 14 網開一面，把 io.c:3408 的函式指標不匹配錯誤強制降級為警告，直接打通全線編譯！
+          make -f pc/Makefile all \
             CC=gcc \
             O=.o \
             LNK=LMINGW32 PLNK=PLMINGW32 \
+            CF="-D__USE_MINGW_ANSI_STDIO -O2 -std=gnu89 -fpermissive -Wno-implicit-function-declaration -Wno-int-conversion -Wno-incompatible-pointer-types -Wno-return-mismatch" \
             LF="-gdwarf-2 -g3" LF2="-lws2_32" RSP=
 
       # 6. 冒煙測試：確保 gawk.exe 能在 Windows 下被原生執行
