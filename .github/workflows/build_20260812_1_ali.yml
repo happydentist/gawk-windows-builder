@@ -15,16 +15,14 @@ concurrency:
 
 jobs:
   # =================================================================
-  # Windows x86_64 平台編譯 Job (終極 Autotools 樹內編譯線路)
+  # Windows x86_64 平台編編譯 Job (官方 Native MinGW 完美線路)
   # =================================================================
   build-windows:
     runs-on: windows-latest
     steps:
-      # 1. 下載你自己的包裝腳本
       - name: Check out this repository
         uses: actions/checkout@v4
 
-      # 2. 透過 GitHub 內網骨幹，直接把最新、最完整的原始碼檔案樹吐到 upstream/gawk
       - name: Fetch GNU Awk Source via Master Branch
         uses: actions/checkout@v4
         with:
@@ -32,7 +30,6 @@ jobs:
           ref: 'master'
           path: 'upstream/gawk'
 
-      # 3. MSYS2 與 MinGW 套件高速快取機制
       - name: Cache MSYS2 and MinGW Toolchain
         id: msys2-cache
         uses: actions/cache@v4
@@ -40,9 +37,8 @@ jobs:
           path: |
             D:\a\_temp\msys64
             C:\msys64
-          key: msys2-mingw64-v2-autotools-gcc-zip
+          key: msys2-mingw64-v3-native-gcc-zip
 
-      # 4. 啟動並初始化編譯專用的 MSYS2 環境 (快取命中時一秒跳過安裝)
       - name: Set up MSYS2 / MinGW-w64
         uses: msys2/setup-msys2@v2
         with:
@@ -50,11 +46,10 @@ jobs:
           update: false 
           path-type: inherit
           install: >-
-            git autoconf automake libtool make base-devel bison gettext gettext-devel xz zip
-            mingw-w64-x86_64-toolchain
+            make mingw-w64-x86_64-toolchain zip
 
-      # 💡 5. 終極樹內編譯線路：由 configure 自動產生相容標頭檔，再用 -fpermissive 赦免歷史語法衝突
-      - name: Run Autotools In-Tree Build
+      # 💡 核心編譯步驟：完全不跑 configure，純本地物理對齊 Windows 原生環境定義
+      - name: Run Windows Native Build
         shell: msys2 {0}
         env:
           MSYSTEM: MINGW64
@@ -64,47 +59,28 @@ jobs:
           ROOT="$(pwd)"
           SRC="$ROOT/upstream/gawk"
           
-          echo "=== 1. 建立 Windows 核心相容 Shim 檔 ==="
-          # 💡 精準模擬 CODESET，徹底解決 regcomp.c 找不到編碼巨集的崩潰
-          cat << 'EOF' > "$SRC/support/langinfo.h"
-          #ifndef _LANGINFO_H
-          #define _LANGINFO_H
-          typedef int nl_item;
-          #define CODESET     0
-          #define RADIXCHAR   1
-          #define THOUSEP     2
-          #define CRNCYSTR    3
-          static inline char *nl_langinfo(nl_item item) {
-              if (item == CODESET) return "UTF-8";
-              return "";
-          }
-          #endif
-          EOF
-          
-          echo "=== 2. 執行 Autoreconf ==="
+          echo "=== 1. 準備 Windows 官方移植層檔案 ==="
           cd "$SRC"
-          autoreconf -fi
           
-          echo "=== 3. 執行 Configure (樹內原生編譯) ==="
-          # 💡 解法核心：
-          # -std=gnu99 讓 dfa.c 的現代 for 迴圈宣告合法。
-          # -fpermissive 強制讓 GCC 容忍並自動降級 getopt.c 和 gawkmisc.c 的所有歷史符號與 BOOL 重複定義衝突！
-          ./configure \
-            --disable-dependency-tracking \
-            --enable-shared \
-            --disable-extensions \
-            --with-readline \
-            --with-mpfr \
-            --enable-pma \
-            --disable-silent-rules \
+          # 1. 依據官方指引，將 pc/ 內部的所有 Windows 相容層程式碼拷貝至根目錄
+          find pc -maxdepth 1 -type f ! -name ChangeLog -exec cp {} . \;
+          
+          # 2. 💡 終極關鍵：物理填補 Makefile 的依賴死穴！
+          # 直接把內建的 support/regex.h 複製到根目錄，並把專為 Windows 設計的 pc/config.h 也複製到根目錄。
+          # 這能 100% 繞過 configure，且消滅 No rule to make target 'regex.h' 錯誤！
+          cp support/regex.h ./regex.h
+          cp pc/config.h ./config.h
+          
+          echo "=== 2. 執行 Windows 專用 Makefile 原生編譯 ==="
+          # 💡 呼叫 pc/Makefile 的 mingw32 目錄，
+          # 注入 LF2="-lws2_32" 強制連結 Windows 網路庫，解決 io.c 的所有通訊符號錯誤！
+          make -f pc/Makefile mingw32 \
             CC=gcc \
-            CFLAGS="-O2 -std=gnu99 -fpermissive -Wno-implicit-function-declaration -Wno-int-conversion -Wno-incompatible-pointer-types" \
-            LDFLAGS=""
-            
-          echo "=== 4. 執行 Make 編譯 ==="
-          make -j4
+            O=.o \
+            CF="-O2 -std=gnu89 -fpermissive -Wno-implicit-function-declaration -Wno-int-conversion -Wno-incompatible-pointer-types -Wno-return-mismatch" \
+            OBJ=popen.o LNK=LMINGW32 PLNK=PLMINGW32 \
+            LF="-gdwarf-2 -g3" LF2="-lws2_32" RSP=
 
-      # 6. 冒煙測試：確保 gawk.exe 能在 Windows 下被原生執行
       - name: Run Smoke Test
         shell: msys2 {0}
         run: |
@@ -112,7 +88,6 @@ jobs:
           ./upstream/gawk/gawk.exe --version
           test "$(echo 'hello world' | ./upstream/gawk/gawk.exe '{ print toupper($2), 1+2 }')" = "WORLD 3"
 
-      # 7. 自動打包產物
       - name: Package Artifacts
         shell: msys2 {0}
         run: |
@@ -129,7 +104,6 @@ jobs:
           sha256sum gawk-x86_64-windows.zip > gawk-x86_64-windows.zip.sha256
           cat gawk-x86_64-windows.zip.sha256
 
-      # 8. 一鍵推送到 Release
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
