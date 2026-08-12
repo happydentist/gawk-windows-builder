@@ -15,7 +15,7 @@ concurrency:
 
 jobs:
   # =================================================================
-  # Windows x86_64 平台編譯 Job (官方 Native MinGW 線路 + 高速快取)
+  # Windows x86_64 平台編譯 Job (終極 Autotools 樹內編譯線路)
   # =================================================================
   build-windows:
     runs-on: windows-latest
@@ -32,7 +32,7 @@ jobs:
           ref: 'master'
           path: 'upstream/gawk'
 
-      # 3. 關鍵優化：MSYS2 與 MinGW 套件快取機制
+      # 3. MSYS2 與 MinGW 套件高速快取機制
       - name: Cache MSYS2 and MinGW Toolchain
         id: msys2-cache
         uses: actions/cache@v4
@@ -40,9 +40,9 @@ jobs:
           path: |
             D:\a\_temp\msys64
             C:\msys64
-          key: msys2-mingw64-v1-make-gcc-zip
+          key: msys2-mingw64-v2-autotools-gcc-zip
 
-      # 4. 啟動並初始化編譯專用的 MSYS2 環境 (update: false 提升網路穩定度)
+      # 4. 啟動並初始化編譯專用的 MSYS2 環境 (快取命中時一秒跳過安裝)
       - name: Set up MSYS2 / MinGW-w64
         uses: msys2/setup-msys2@v2
         with:
@@ -50,10 +50,11 @@ jobs:
           update: false 
           path-type: inherit
           install: >-
-            make mingw-w64-x86_64-toolchain zip
+            git autoconf automake libtool make base-devel bison gettext gettext-devel xz zip
+            mingw-w64-x86_64-toolchain
 
-      # 💡 5. 採用 GNU 官方標準的 Windows 原生移植編譯線路
-      - name: Run Windows Native Build
+      # 💡 5. 終極樹內編譯線路：由 configure 自動產生相容標頭檔，再用 -fpermissive 赦免歷史語法衝突
+      - name: Run Autotools In-Tree Build
         shell: msys2 {0}
         env:
           MSYSTEM: MINGW64
@@ -63,24 +64,45 @@ jobs:
           ROOT="$(pwd)"
           SRC="$ROOT/upstream/gawk"
           
-          echo "=== 1. 準備 Windows 官方移植層檔案 ==="
+          echo "=== 1. 建立 Windows 核心相容 Shim 檔 ==="
+          # 💡 精準模擬 CODESET，徹底解決 regcomp.c 找不到編碼巨集的崩潰
+          cat << 'EOF' > "$SRC/support/langinfo.h"
+          #ifndef _LANGINFO_H
+          #define _LANGINFO_H
+          typedef int nl_item;
+          #define CODESET     0
+          #define RADIXCHAR   1
+          #define THOUSEP     2
+          #define CRNCYSTR    3
+          static inline char *nl_langinfo(nl_item item) {
+              if (item == CODESET) return "UTF-8";
+              return "";
+          }
+          #endif
+          EOF
+          
+          echo "=== 2. 執行 Autoreconf ==="
           cd "$SRC"
+          autoreconf -fi
           
-          # 💡 依據官方 README.pc 指引：將 pc/ 資料夾下的所有 Windows 專用相容檔直接複製到原始碼根目錄
-          find pc -maxdepth 1 -type f ! -name ChangeLog -exec cp {} . \;
-          
-          # 💡 終極修復：先執行官方標準的 config 配置指令！
-          # 這會強迫 pc/Makefile 自動從 support/ 內把 regex.h 生成並對齊到根目錄，徹底擊碎 No rule to make target 'regex.h' 錯誤！
-          make -f pc/Makefile config
-          
-          echo "=== 2. 執行 Windows 專用 Makefile 原生編譯 ==="
-          # 💡 擴充 CF 旗標，確保現代 MinGW GCC 13/14 將舊時代的隱式宣告、類型不匹配降級為警告
-          make -f pc/Makefile mingw32 \
+          echo "=== 3. 執行 Configure (樹內原生編譯) ==="
+          # 💡 解法核心：
+          # -std=gnu99 讓 dfa.c 的現代 for 迴圈宣告合法。
+          # -fpermissive 強制讓 GCC 容忍並自動降級 getopt.c 和 gawkmisc.c 的所有歷史符號與 BOOL 重複定義衝突！
+          ./configure \
+            --disable-dependency-tracking \
+            --enable-shared \
+            --disable-extensions \
+            --with-readline \
+            --with-mpfr \
+            --enable-pma \
+            --disable-silent-rules \
             CC=gcc \
-            O=.o \
-            CF="-O2 -std=gnu89 -fpermissive -Wno-implicit-function-declaration -Wno-int-conversion -Wno-incompatible-pointer-types -Wno-return-mismatch" \
-            OBJ=popen.o LNK=LMINGW32 PLNK=PLMINGW32 \
-            LF="-gdwarf-2 -g3" LF2=-lmsvcp60 RSP=
+            CFLAGS="-O2 -std=gnu99 -fpermissive -Wno-implicit-function-declaration -Wno-int-conversion -Wno-incompatible-pointer-types" \
+            LDFLAGS=""
+            
+          echo "=== 4. 執行 Make 編譯 ==="
+          make -j4
 
       # 6. 冒煙測試：確保 gawk.exe 能在 Windows 下被原生執行
       - name: Run Smoke Test
