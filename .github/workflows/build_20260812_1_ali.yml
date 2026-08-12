@@ -43,7 +43,7 @@ jobs:
             git autoconf automake libtool make base-devel bison gettext gettext-devel xz zip
             mingw-w64-x86_64-toolchain
 
-      # 💡 4. 樹內編譯 (In-tree build) 搭配 GCC 語法降級與診斷容忍補丁
+      # 💡 4. 樹內編譯 (In-tree build) —— 完美的現代標準與舊代碼寬容並行線路
       - name: Run Autotools Build
         shell: msys2 {0}
         env:
@@ -63,8 +63,9 @@ jobs:
           autoreconf -fi
           
           echo "=== 3. Run Configure (In-tree Build) ==="
-          # 💡 終極關鍵修復：在 CFLAGS 中強行注入舊版編譯標準 (-std=gnu89)
-          # 並加掛三大放寬旗標，強迫現代 GCC 將舊時代的 getenv/getopt 自定義結構降級為警告，徹底打通 make 編譯！
+          # 💡 終極修復：
+          # 1. 移除 -std=gnu89，改用 -std=gnu99 讓 dfa.c 內部的 for (int i...) 迴圈宣告合法通關。
+          # 2. 精準掛載 -Wno-error=mismatched-decls 等放寬旗標，強迫 GCC 赦免 getopt.c 內的 getenv 符號衝突。
           ./configure \
             --disable-dependency-tracking \
             --enable-shared \
@@ -74,7 +75,7 @@ jobs:
             --enable-pma \
             --disable-silent-rules \
             CC=gcc \
-            CFLAGS="-O2 -std=gnu89 -Wno-implicit-function-declaration -Wno-int-conversion -Wno-incompatible-pointer-types -Wno-mismatched-decls" \
+            CFLAGS="-O2 -std=gnu99 -Wno-error=implicit-function-declaration -Wno-error=mismatched-decls -Wno-error=int-conversion -Wno-error=incompatible-pointer-types" \
             LDFLAGS=""
             
           echo "=== 4. Run Make ==="
