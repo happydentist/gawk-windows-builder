@@ -9,89 +9,118 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  build:
-    name: Build and release gawk.exe (MinGW-w64)
+  # =================================================================
+  # Windows x86_64 平台編譯 Job
+  # =================================================================
+  build-windows:
     runs-on: windows-latest
     steps:
       - name: Check out this repository
         uses: actions/checkout@v4
 
-      # 💡 建立與 freeswitch 相同的 minimal shim，防止 Windows 找不到 langinfo.h
-      # 自動在工作目錄建立，免去手動 commit 標頭檔的麻煩
-      - name: Create langinfo shim
+      # 💡 繼承 freeswitch 網路精髓：在微軟最穩定的 PowerShell 環境下載，完全不透過 MSYS2，
+      # 同時改用大廠高速學術鏡像 dotsrc，100% 避開 gnu.org 防火牆阻擋。
+      - name: Download and Extract GNU Awk source
+        shell: powershell
         run: |
-          mkdir -p shim
-          echo "" > shim/langinfo.h
+          New-Item -ItemType Directory -Force -Path "upstream"
+          Write-Host "正在下載 gawk-5.4.1.tar.gz..."
+          Invoke-WebRequest -Uri "https://dotsrc.org" -OutFile "gawk-src.tar.gz"
+          
+          Write-Host "正在解壓縮原始碼..."
+          tar -xzf gawk-src.tar.gz
+          
+          Write-Host "搬移目錄至專案指定位置..."
+          Move-Item -Path "gawk-5.4.1" -Destination "upstream/gawk"
+          Remove-Item -Path "gawk-src.tar.gz"
+          
+          Write-Host "原始碼準備完畢！"
 
+      # 💡 繼承 freeswitch 效能精髓：update 設為 false，直接使用系統自帶快取，避免搶佔網路通道
       - name: Set up MSYS2 / MinGW-w64
         uses: msys2/setup-msys2@v2
         with:
           msystem: MINGW64
-          update: false # 💡 沿用 freeswitch 的優化，不主動更新套件，防止網路干擾
-          install: make mingw-w64-x86_64-gcc
+          update: false 
+          path-type: inherit
+          install: >-
+            git autoconf automake libtool make base-devel bison gettext gettext-devel xz zip
+            mingw-w64-x86_64-toolchain
 
-      # 💡 完美的變數傳遞：在 env 區塊內傳入，run 內只使用 $VERSION，100% 根除 nested brace 網址被截斷的 Bug
-      - name: Fetch gawk source from ftp.gnu.org
+      # 💡 回歸標準 Autotools 編譯：透過跑 configure 自動產出 regex.h 還有對應 Makefile，
+      # 並且關閉 extensions 以相容 Windows 沒有 dlfcn.h 的情況。
+      - name: Run Autotools Build
         shell: msys2 {0}
         env:
-          VERSION: "5.4.1" # 👈 直接在這裡指定你想編譯的版本
+          MSYSTEM: MINGW64
         run: |
           set -euo pipefail
-          curl -fsSL -o "gawk-$VERSION.tar.gz" "https://ftp.gnu.org/gnu/gawk/gawk-$VERSION.tar.gz"
-          tar xzf "gawk-$VERSION.tar.gz"
-
-      - name: Build gawk.exe
-        shell: msys2 {0}
-        env:
-          VERSION: "5.4.1"
-        run: |
-          set -euo pipefail
-          cd "gawk-$VERSION"
           
-          # 套用 freeswitch 的核心技術：複製 pc/ 的 Windows 專用建置檔到根目錄
-          find pc -maxdepth 1 -type f ! -name ChangeLog -exec cp {} . \;
-          cp ../shim/langinfo.h .
+          ROOT="$(pwd)"
+          SRC="$ROOT/upstream/gawk"
+          BUILD_DIR="$ROOT/build"
           
-          # 調用預置的 Makefile 進行免 configure 原生編譯
-          make all \
-            CC=gcc O=.o \
-            CF="-O2 -gdwarf-2 -g3 -std=gnu89 -Wno-implicit-function-declaration -Wno-int-conversion -Wno-incompatible-pointer-types -Wno-return-mismatch" \
-            OBJ=popen.o LNK=LMINGW32 PLNK=PLMINGW32 \
-            LF="-gdwarf-2 -g3" LF2=-lmsvcp60 RSP=
+          mkdir -p "$BUILD_DIR"
+          
+          echo "=== 1. 執行 Autoreconf ==="
+          cd "$SRC"
+          autoreconf -fi
+          
+          echo "=== 2. 執行 Configure ==="
+          cd "$BUILD_DIR"
+          "$SRC/configure" \
+            --disable-dependency-tracking \
+            --enable-shared \
+            --disable-extensions \
+            --with-readline \
+            --with-mpfr \
+            --enable-pma \
+            --disable-silent-rules \
+            CC=gcc CFLAGS="-O2" LDFLAGS=""
+            
+          echo "=== 3. 執行 Make 編譯 ==="
+          make -j4
 
-      - name: Smoke test
+      # 💡 冒煙測試：確保 gawk.exe 能在 Windows 下被原生執行
+      - name: Run Smoke Test
         shell: msys2 {0}
-        env:
-          VERSION: "5.4.1"
         run: |
           set -euo pipefail
-          cd "gawk-$VERSION"
-          ./gawk.exe --version
-          test "$(echo 'hello world' | ./gawk.exe '{ print toupper($2), 1+2 }')" = "WORLD 3"
+          ./build/gawk.exe --version
+          test "$(echo 'hello world' | ./build/gawk.exe '{ print toupper($2), 1+2 }')" = "WORLD 3"
 
-      - name: Package
+      # 💡 自動打包產物
+      - name: Package Artifacts
         shell: msys2 {0}
-        env:
-          VERSION: "5.4.1"
         run: |
           set -euo pipefail
-          cd "gawk-$VERSION"
-          strip gawk.exe pgawk.exe
-          mkdir -p ../dist
-          cp gawk.exe pgawk.exe COPYING ../dist/
+          mkdir -p dist
+          
+          # 提取編譯好的執行檔與證書
+          cd build
+          strip gawk.exe
+          cp gawk.exe ../dist/
+          cp ../upstream/gawk/COPYING ../dist/
+          
+          # 壓縮與計算校驗碼
           cd ../dist
-          sha256sum gawk.exe pgawk.exe COPYING > sha256sums.txt
+          zip -r gawk-x86_64-windows.zip gawk.exe COPYING
+          sha256sum gawk-x86_64-windows.zip > gawk-x86_64-windows.zip.sha256
+          cat gawk-x86_64-windows.zip.sha256
 
-      - name: Create GitHub release
+      # 💡 一鍵推送到 Release
+      - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
         with:
           files: |
-            dist/gawk.exe
-            dist/pgawk.exe
-            dist/COPYING
-            dist/sha256sums.txt
+            dist/gawk-x86_64-windows.zip
+            dist/gawk-x86_64-windows.zip.sha256
           token: ${{ secrets.GITHUB_TOKEN }}
           draft: false
           prerelease: false
