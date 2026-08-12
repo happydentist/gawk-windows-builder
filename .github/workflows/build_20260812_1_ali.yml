@@ -81,13 +81,12 @@ jobs:
           cp pc/config.h ./config.h
           
           # 5. 💡 終極關鍵修復：手動在當前根目錄建立一個 malloc/ 子資料夾，
-          # 並把 support/malloc/ 底下的核心標頭檔全部複製進去。
-          # 這能 100% 物理性解決 No rule to make target 'malloc/dynarray.h' 錯誤！
+          # 這次直接使用 *.* 複製所有檔案（包含 .h 與 .c skeleton），100% 物理性消滅 malloc/ 依賴鏈死結！
           mkdir -p malloc
-          cp support/malloc/*.h ./malloc/
+          cp support/malloc/* ./malloc/
           
           echo "=== 2. 執行 Windows 專用 Makefile 原生編譯 ==="
-          # 💡 所有依賴結構已被完全對齊，我們直接繞過遞迴，全速向 'all' 標籤發動總攻！
+          # 💡 所有依賴結構已被完全對齊，直接繞過遞迴，全速向 'all' 標籤發動總攻！
           make -f pc/Makefile all \
             CC=gcc \
             O=.o \
