@@ -69,18 +69,21 @@ jobs:
           # 1. 依據官方指引，將 pc/ 內部的所有 Windows 相容層程式碼拷貝至根目錄
           find pc -maxdepth 1 -type f ! -name ChangeLog -exec cp {} . \;
           
-          # 2. 💡 終極關鍵修正：把 support/ 資料夾內的所有標頭檔 (*.h) 一口氣全部複製到根目錄！
-          # 這能全面、物理性地消滅 `No rule to make target 'dfa.h'` 或是其它任何相容標頭檔找不到的 Makefile 頑疾！
+          # 2. 把 support/ 資料夾內的所有標頭檔 (*.h) 一口氣全部複製到根目錄，消滅找不到依賴的 Makefile 頑疾
           cp support/*.h .
           cp pc/config.h ./config.h
           
-          echo "=== 2. 執行 Windows 專用 Makefile 原生編譯 ==="
-          # 💡 呼叫 pc/Makefile 進行免 configure 原生編譯，並強制連結 Windows 網路庫 (ws2_32)
+          echo "=== 2. 執行 Windows 專用 Makefile 原生編編譯 ==="
+          # 💡 終極修正：
+          # 1. 直接在外部用全域環境變數導出 CFLAGS，強迫 Makefile 內部每一條 gcc 規則都吃進參數。
+          # 2. 注入 `-DBOOL=GAWK_BOOL` 將 awk.h 內的 BOOL 當場改名，100% 根除與 windows.h / minwindef.h 的型態衝突！
+          export CFLAGS="-O2 -std=gnu99 -fpermissive -DBOOL=GAWK_BOOL -Wno-implicit-function-declaration -Wno-int-conversion -Wno-incompatible-pointer-types -Wno-return-mismatch"
+          
+          # 呼叫 pc/Makefile 進行原生編譯，並強制連結 Windows 網路庫 (ws2_32)
           make -f pc/Makefile mingw32 \
             CC=gcc \
             O=.o \
-            CF="-O2 -std=gnu89 -fpermissive -Wno-implicit-function-declaration -Wno-int-conversion -Wno-incompatible-pointer-types -Wno-return-mismatch" \
-            OBJ=popen.o LNK=LMINGW32 PLNK=PLMINGW32 \
+            LNK=LMINGW32 PLNK=PLMINGW32 \
             LF="-gdwarf-2 -g3" LF2="-lws2_32" RSP=
 
       # 6. 冒煙測試：確保 gawk.exe 能在 Windows 下被原生執行
