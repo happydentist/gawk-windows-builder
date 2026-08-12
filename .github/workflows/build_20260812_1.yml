@@ -35,7 +35,6 @@ jobs:
             mingw-w64-x86_64-toolchain
 
       # 💡 採用你驗證成功、100% OK 的下載與解壓縮方式！
-      # 為了配合後續的樹內編譯，我們直接在當前根目錄解壓，並建立一個 upstream/gawk 目錄
       - name: Fetch gawk source from ftp.gnu.org
         shell: msys2 {0}
         env:
@@ -44,16 +43,13 @@ jobs:
           set -euo pipefail
           mkdir -p upstream
           
-          # 執行你測試完全通過的 curl 與 tar 指令
-          curl -fsSL -o "gawk-$VERSION.tar.gz" "https://ftp.gnu.org/gnu/gawk/gawk-$VERSION.tar.gz"
+          curl -fsSL -o "gawk-$VERSION.tar.gz" "https://gnu.org"
           tar xzf "gawk-$VERSION.tar.gz"
           
-          # 將解壓後的目錄定位到專案架構預期的位置
           mv "gawk-$VERSION" upstream/gawk
           rm "gawk-$VERSION.tar.gz"
 
-      # 💡 修正編譯模式：切換成「樹內編譯 (In-tree build)」，直接在原始碼目錄內執行 ./configure，
-      # 100% 解決找不到 regex.h 的 Autotools 相對路徑臭蟲。
+      # 💡 樹內編譯 (In-tree build) 
       - name: Run Autotools Build
         shell: msys2 {0}
         env:
@@ -64,11 +60,16 @@ jobs:
           ROOT="$(pwd)"
           SRC="$ROOT/upstream/gawk"
           
-          echo "=== 1. 執行 Autoreconf ==="
+          echo "=== 1. 建立 Windows Shim 檔 ==="
+          # 💡 關鍵修正：Windows 沒有 langinfo.h，我們直接在原始碼的 support 目錄塞一個空的 shim 標頭檔
+          # 這會徹底根除 minrx.c:41 找不到 langinfo.h 的編譯中斷死穴！
+          echo "" > "$SRC/support/langinfo.h"
+          
+          echo "=== 2. 執行 Autoreconf ==="
           cd "$SRC"
           autoreconf -fi
           
-          echo "=== 2. 執行 Configure (直接在原始碼目錄內執行) ==="
+          echo "=== 3. 執行 Configure ==="
           ./configure \
             --disable-dependency-tracking \
             --enable-shared \
@@ -79,7 +80,7 @@ jobs:
             --disable-silent-rules \
             CC=gcc CFLAGS="-O2" LDFLAGS=""
             
-          echo "=== 3. 執行 Make 編譯 ==="
+          echo "=== 4. 執行 Make 編譯 ==="
           make -j4
 
       # 💡 冒煙測試：確保 gawk.exe 能在 Windows 下被原生執行
