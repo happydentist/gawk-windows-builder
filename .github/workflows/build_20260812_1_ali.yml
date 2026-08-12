@@ -73,17 +73,15 @@ jobs:
           cp support/*.h .
           cp pc/config.h ./config.h
           
-          echo "=== 2. 執行 Windows 專用 Makefile 原生編編譯 ==="
-          # 💡 終極修正：
-          # 1. 直接在外部用全域環境變數導出 CFLAGS，強迫 Makefile 內部每一條 gcc 規則都吃進參數。
-          # 2. 注入 `-DBOOL=GAWK_BOOL` 將 awk.h 內的 BOOL 當場改名，100% 根除與 windows.h / minwindef.h 的型態衝突！
-          export CFLAGS="-O2 -std=gnu99 -fpermissive -DBOOL=GAWK_BOOL -Wno-implicit-function-declaration -Wno-int-conversion -Wno-incompatible-pointer-types -Wno-return-mismatch"
-          
-          # 呼叫 pc/Makefile 進行原生編譯，並強制連結 Windows 網路庫 (ws2_32)
+          echo "=== 2. 執行 Windows 專用 Makefile 原生編譯 ==="
+          # 💡 終極關鍵修復：直接在 make 命令尾端將 CF 變數徹底強制覆蓋！
+          # 這能防止 Makefile 內部的硬編碼把我們的引數刷掉。
+          # 同時掛載 -DBOOL=GAWK_BOOL 與 -D_MINWINDEF_H，將微軟的 typedef int BOOL 完全屏蔽阻斷！
           make -f pc/Makefile mingw32 \
             CC=gcc \
             O=.o \
             LNK=LMINGW32 PLNK=PLMINGW32 \
+            CF="-D__USE_MINGW_ANSI_STDIO -O2 -std=gnu89 -fpermissive -DBOOL=GAWK_BOOL -D_MINWINDEF_H -D_WINDEF_H -Wno-implicit-function-declaration -Wno-int-conversion -Wno-incompatible-pointer-types -Wno-return-mismatch" \
             LF="-gdwarf-2 -g3" LF2="-lws2_32" RSP=
 
       # 6. 冒煙測試：確保 gawk.exe 能在 Windows 下被原生執行
