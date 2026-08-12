@@ -80,11 +80,14 @@ jobs:
           cp support/*.h .
           cp pc/config.h ./config.h
           
+          # 5. 💡 終極關鍵修復：手動在當前根目錄建立一個 malloc/ 子資料夾，
+          # 並把 support/malloc/ 底下的核心標頭檔全部複製進去。
+          # 這能 100% 物理性解決 No rule to make target 'malloc/dynarray.h' 錯誤！
+          mkdir -p malloc
+          cp support/malloc/*.h ./malloc/
+          
           echo "=== 2. 執行 Windows 專用 Makefile 原生編譯 ==="
-          # 💡 終極修正點：
-          # 1. 不要再調用會產生遞迴覆蓋的 'mingw32' 標籤，我們直接對準最底層的 'all' 標籤發動總攻！
-          # 2. 將 -fpermissive 與 -Wno-error=incompatible-pointer-types 直接注入給 CF 參數。
-          #    這能強迫 GCC 14 網開一面，把 io.c:3408 的函式指標不匹配錯誤強制降級為警告，直接打通全線編譯！
+          # 💡 所有依賴結構已被完全對齊，我們直接繞過遞迴，全速向 'all' 標籤發動總攻！
           make -f pc/Makefile all \
             CC=gcc \
             O=.o \
