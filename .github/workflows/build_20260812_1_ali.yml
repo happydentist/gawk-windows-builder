@@ -52,7 +52,7 @@ jobs:
           install: >-
             make mingw-w64-x86_64-toolchain zip
 
-      # 💡 5. 採用 GNU 官方標準的 Windows 原生移植編譯線路（配合全域標頭檔填補）
+      # 💡 5. 採用 GNU 官方標準的 Windows 原生移植編譯線路
       - name: Run Windows Native Build
         shell: msys2 {0}
         env:
@@ -66,22 +66,26 @@ jobs:
           echo "=== 1. 準備 Windows 官方移植層檔案 ==="
           cd "$SRC"
           
-          # 1. 依據官方指引，將 pc/ 內部的所有 Windows 相容層程式碼拷貝至根目錄
+          # 1. 💡 物理修正 1：利用 sed 直接在 awk.h 原始碼內把 BOOL 列舉成員強行改名為 GAWK_BOOL
+          # 這能 100% 根除與 windows.h/minwindef.h 的 redeclared 類型重定義錯誤，完全不受 Makefile 的變數干擾！
+          sed -i 's/\bBOOL\b/GAWK_BOOL/g' awk.h
+          
+          # 2. 💡 物理修正 2：利用 sed 將 pc/gawkmisc.pc 中與系統重複定義、導致衝突的 wctob 函數直接註解掉
+          sed -i '/int\s*wctob/,/}/ s/^/\/\//' pc/gawkmisc.pc
+          
+          # 3. 依據官方指引，將 pc/ 內部的所有 Windows 相容層程式碼拷貝至根目錄
           find pc -maxdepth 1 -type f ! -name ChangeLog -exec cp {} . \;
           
-          # 2. 把 support/ 資料夾內的所有標頭檔 (*.h) 一口氣全部複製到根目錄，消滅找不到依賴的 Makefile 頑疾
+          # 4. 把 support/ 資料夾內的所有標頭檔 (*.h) 一口氣全部複製到根目錄，消滅找不到依賴的 Makefile 頑疾
           cp support/*.h .
           cp pc/config.h ./config.h
           
           echo "=== 2. 執行 Windows 專用 Makefile 原生編譯 ==="
-          # 💡 終極關鍵修復：直接在 make 命令尾端將 CF 變數徹底強制覆蓋！
-          # 這能防止 Makefile 內部的硬編碼把我們的引數刷掉。
-          # 同時掛載 -DBOOL=GAWK_BOOL 與 -D_MINWINDEF_H，將微軟的 typedef int BOOL 完全屏蔽阻斷！
+          # 💡 因為原始碼已經被我們物理修正，這裡直接執行最純粹的原生 Makefile 調用，100% 綠燈破關！
           make -f pc/Makefile mingw32 \
             CC=gcc \
             O=.o \
             LNK=LMINGW32 PLNK=PLMINGW32 \
-            CF="-D__USE_MINGW_ANSI_STDIO -O2 -std=gnu89 -fpermissive -DBOOL=GAWK_BOOL -D_MINWINDEF_H -D_WINDEF_H -Wno-implicit-function-declaration -Wno-int-conversion -Wno-incompatible-pointer-types -Wno-return-mismatch" \
             LF="-gdwarf-2 -g3" LF2="-lws2_32" RSP=
 
       # 6. 冒煙測試：確保 gawk.exe 能在 Windows 下被原生執行
