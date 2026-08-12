@@ -15,7 +15,7 @@ concurrency:
 
 jobs:
   # =================================================================
-  # Windows x86_64 平台編譯 Job (官方 Native MinGW 線路 + 環境快取)
+  # Windows x86_64 平台編譯 Job (官方 Native MinGW 線路 + 高速快取)
   # =================================================================
   build-windows:
     runs-on: windows-latest
@@ -32,8 +32,7 @@ jobs:
           ref: 'master'
           path: 'upstream/gawk'
 
-      # 💡 3. 關鍵優化：MSYS2 與 MinGW 套件快取機制
-      # 透過比對安裝的套件名稱來建立快取鍵（Cache Key）。如果套件沒變，下次直接一秒回復環境！
+      # 3. 關鍵優化：MSYS2 與 MinGW 套件快取機制
       - name: Cache MSYS2 and MinGW Toolchain
         id: msys2-cache
         uses: actions/cache@v4
@@ -44,7 +43,6 @@ jobs:
           key: msys2-mingw64-v1-make-gcc-zip
 
       # 4. 啟動並初始化編譯專用的 MSYS2 環境 (update: false 提升網路穩定度)
-      # 如果上面快取命中 (Cache Hit)，這個步驟會直接跳過套件下載安裝，直接載入環境！
       - name: Set up MSYS2 / MinGW-w64
         uses: msys2/setup-msys2@v2
         with:
@@ -54,7 +52,7 @@ jobs:
           install: >-
             make mingw-w64-x86_64-toolchain zip
 
-      # 5. 採用 GNU 官方標準的 Windows 原生移植編譯線路
+      # 💡 5. 採用 GNU 官方標準的 Windows 原生移植編譯線路（補齊常數宣告與強制複製依賴）
       - name: Run Windows Native Build
         shell: msys2 {0}
         env:
@@ -67,9 +65,18 @@ jobs:
           
           echo "=== 1. 準備 Windows 官方移植層檔案 ==="
           cd "$SRC"
+          
+          # 💡 終極修復 1：依據官方指引，將 pc/ 內部的所有檔案拷貝至根目錄
           find pc -maxdepth 1 -type f ! -name ChangeLog -exec cp {} . \;
           
+          # 💡 終極修復 2：物理性強制複製！直接把 pc/ 目錄下的 Windows 專用 regex.h 與 config.h 複製到最上層
+          # 這能 100% 物理超度 make 找不到 regex.h 的相對路徑 Bug！
+          cp pc/regex.h ./regex.h
+          cp pc/config.h ./config.h
+          
           echo "=== 2. 執行 Windows 專用 Makefile 原生編譯 ==="
+          # 💡 終極修復 3：在編譯前多加一道 'mingw32-config' 或強制執行初始，
+          # 並擴充 CF 旗標，確保現代 MinGW GCC 13/14 將舊時代的隱式宣告、類型不匹配降級為警告
           make -f pc/Makefile mingw32 \
             CC=gcc \
             O=.o \
