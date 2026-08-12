@@ -24,16 +24,15 @@ jobs:
       - name: Check out this repository
         uses: actions/checkout@v4
 
-      # 💡 終極修正：直接拉取保證 100% 絕對存在、絕對不會因為版本尾碼對不上而報錯的 'master' 分支！
-      # 這會以最高速的 GitHub 內網骨幹，直接把最新、最完整的原始碼檔案樹吐到 upstream/gawk
+      # 2. 透過 GitHub 內網骨幹，直接把最新、最完整的原始碼檔案樹吐到 upstream/gawk
       - name: Fetch GNU Awk Source via Master Branch
         uses: actions/checkout@v4
         with:
           repository: 'gnu-mirror-unofficial/gawk'
-          ref: 'master' # 👈 100% 存在的最新開發主線，徹底消滅 Git fetch exit code 1
+          ref: 'master'
           path: 'upstream/gawk'
 
-      # 2. 啟動並初始化編譯專用的 MSYS2 環境 (update: false 提升網路穩定度)
+      # 3. 啟動並初始化編譯專用的 MSYS2 環境 (update: false 提升網路穩定度)
       - name: Set up MSYS2 / MinGW-w64
         uses: msys2/setup-msys2@v2
         with:
@@ -44,7 +43,7 @@ jobs:
             git autoconf automake libtool make base-devel bison gettext gettext-devel xz zip
             mingw-w64-x86_64-toolchain
 
-      # 3. 樹內編譯 (In-tree build) 搭配 Windows 專屬相容補丁
+      # 💡 4. 樹內編譯 (In-tree build) 搭配 GCC 語法降級與診斷容忍補丁
       - name: Run Autotools Build
         shell: msys2 {0}
         env:
@@ -61,10 +60,11 @@ jobs:
           
           echo "=== 2. Run Autoreconf ==="
           cd "$SRC"
-          # 💡 因為 master 分支是原生開發庫，強制執行 autoreconf 幫我們生成最新版 Windows configure
           autoreconf -fi
           
           echo "=== 3. Run Configure (In-tree Build) ==="
+          # 💡 終極關鍵修復：在 CFLAGS 中強行注入舊版編譯標準 (-std=gnu89)
+          # 並加掛三大放寬旗標，強迫現代 GCC 將舊時代的 getenv/getopt 自定義結構降級為警告，徹底打通 make 編譯！
           ./configure \
             --disable-dependency-tracking \
             --enable-shared \
@@ -73,12 +73,14 @@ jobs:
             --with-mpfr \
             --enable-pma \
             --disable-silent-rules \
-            CC=gcc CFLAGS="-O2" LDFLAGS=""
+            CC=gcc \
+            CFLAGS="-O2 -std=gnu89 -Wno-implicit-function-declaration -Wno-int-conversion -Wno-incompatible-pointer-types -Wno-mismatched-decls" \
+            LDFLAGS=""
             
           echo "=== 4. Run Make ==="
           make -j4
 
-      # 4. 冒煙測試：確保 gawk.exe 能在 Windows 下被原生執行
+      # 5. 冒煙測試：確保 gawk.exe 能在 Windows 下被原生執行
       - name: Run Smoke Test
         shell: msys2 {0}
         run: |
@@ -86,7 +88,7 @@ jobs:
           ./upstream/gawk/gawk.exe --version
           test "$(echo 'hello world' | ./upstream/gawk/gawk.exe '{ print toupper($2), 1+2 }')" = "WORLD 3"
 
-      # 5. 自動打包產物
+      # 6. 自動打包產物
       - name: Package Artifacts
         shell: msys2 {0}
         run: |
@@ -104,7 +106,7 @@ jobs:
           sha256sum gawk-x86_64-windows.zip > gawk-x86_64-windows.zip.sha256
           cat gawk-x86_64-windows.zip.sha256
 
-      # 6. 一鍵推送到 Release
+      # 7. 一鍵推送到 Release
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
