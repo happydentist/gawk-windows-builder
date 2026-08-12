@@ -76,17 +76,17 @@ jobs:
           # 3. 依據官方指引，將 pc/ 內部的所有 Windows 相容層程式碼拷貝至根目錄
           find pc -maxdepth 1 -type f ! -name ChangeLog -exec cp {} . \;
           
-          # 4. 把 support/ 資料夾內的所有標頭檔 (*.h) 一口氣全部複製到根目錄，消滅找不到依賴的 Makefile 頑疾
-          cp support/*.h .
+          # 4. 💡 終極關鍵修復 1：把 support/ 資料夾內的所有檔案（無論是 .h 還是 .c 原始碼，如 regcomp.c 等）
+          # 一口氣全部無差別複製到根目錄！這能 100% 物理性消滅 No rule to make target 'regcomp.c' 錯誤！
+          cp support/* . 2>/dev/null || true
           cp pc/config.h ./config.h
           
-          # 5. 💡 終極關鍵修復：手動在當前根目錄建立一個 malloc/ 子資料夾，
-          # 這次直接使用 *.* 複製所有檔案（包含 .h 與 .c skeleton），100% 物理性消滅 malloc/ 依賴鏈死結！
+          # 5. 💡 終極關鍵修復 2：手動在當前根目錄建立一個 malloc/ 子資料夾，並把 support/malloc/ 底下的檔案全部複製進去。
           mkdir -p malloc
           cp support/malloc/* ./malloc/
           
           echo "=== 2. 執行 Windows 專用 Makefile 原生編譯 ==="
-          # 💡 所有依賴結構已被完全對齊，直接繞過遞迴，全速向 'all' 標籤發動總攻！
+          # 💡 所有依賴結構已被完全物理對齊，直接繞過遞迴，全速向 'all' 標籤發動總攻！
           make -f pc/Makefile all \
             CC=gcc \
             O=.o \
